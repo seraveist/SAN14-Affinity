@@ -23,7 +23,7 @@
 
         <section class="form-section" data-panel="roster">
           <label for="rosterInput">보유 장수</label>
-          <textarea id="rosterInput" spellcheck="false"></textarea>
+          <textarea id="rosterInput" spellcheck="false" autocomplete="off"></textarea>
           <div class="roster-limits">
             <label class="limit-field" for="groupCount">
               <span>목표 집단 수</span>
@@ -40,7 +40,7 @@
 
         <section class="form-section hidden" data-panel="single">
           <label for="centerInput">중심 장수</label>
-          <input id="centerInput" list="officerNames" />
+          <input id="centerInput" list="officerNames" autocomplete="off" />
           <div class="inline-controls">
             <label for="hopDepth">탐색</label>
             <input id="hopDepth" type="number" min="1" max="4" value="4" />
