@@ -1,4 +1,5 @@
 import json
+import os
 from collections import defaultdict
 from pathlib import Path
 
@@ -6,8 +7,9 @@ from openpyxl import load_workbook
 
 
 ROOT = Path(__file__).resolve().parent
-AFFINITY_PATH = Path(r"C:\Users\User\Downloads\affinity_index.json")
-WORKBOOK_PATH = Path(r"C:\Users\User\Downloads\삼국지14_전체무장_공유(통합본)의 사본.xlsx")
+REPO_ROOT = ROOT.parent
+LEGACY_AFFINITY_PATH = Path(r"C:\Users\User\Downloads\affinity_index.json")
+LEGACY_WORKBOOK_PATH = Path(r"C:\Users\User\Downloads\삼국지14_전체무장_공유(통합본)의 사본.xlsx")
 OUT = ROOT / "data.js"
 
 TRAIT_COLOR = {
@@ -24,14 +26,43 @@ EXTRA_TRAITS = {"악주", "응원"}
 POSITIVE = {"☆", "◎", "○"}
 
 
+def resolve_input_path(env_name, repo_filename, legacy_path):
+    candidates = []
+    env_value = os.environ.get(env_name)
+    if env_value:
+        candidates.append(Path(env_value))
+    candidates.extend([REPO_ROOT / repo_filename, legacy_path])
+
+    for path in candidates:
+        if path.exists():
+            return path
+
+    checked = "\n".join(f"- {path}" for path in candidates)
+    raise FileNotFoundError(f"{env_name} input file not found. Checked:\n{checked}")
+
+
+AFFINITY_PATH = resolve_input_path(
+    "SAN14_AFFINITY_JSON",
+    "affinity_index.json",
+    LEGACY_AFFINITY_PATH,
+)
+WORKBOOK_PATH = resolve_input_path(
+    "SAN14_WORKBOOK",
+    "삼국지14_전체무장_공유(통합본)의 사본.xlsx",
+    LEGACY_WORKBOOK_PATH,
+)
+
+
 def load_affinity():
     with AFFINITY_PATH.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
     officers = {}
     by_name = defaultdict(list)
+    raw_by_id = {}
     for raw in data["characters"]:
         oid = int(raw["id"])
+        raw_by_id[oid] = raw
         officers[oid] = {
             "id": oid,
             "name": raw["name"],
@@ -39,13 +70,28 @@ def load_affinity():
         }
         by_name[raw["name"]].append(oid)
 
+    def disambiguate_targets(edge):
+        target_ids = [int(target) for target in edge.get("target_ids", [])]
+        if len(target_ids) <= 1:
+            return target_ids
+
+        source_name = edge.get("source_name")
+        matched = []
+        for target_id in target_ids:
+            relations = raw_by_id.get(target_id, {}).get("relations", {})
+            names = [name for rows in relations.values() for name in rows]
+            if source_name in names:
+                matched.append(target_id)
+
+        return matched or target_ids
+
     edges = []
     for edge in data["edges"]:
         relation = edge["relation"]
         if relation not in POSITIVE:
             continue
         source = int(edge["source_id"])
-        for target in edge.get("target_ids", []):
+        for target in disambiguate_targets(edge):
             edges.append({
                 "source": source,
                 "target": int(target),
@@ -135,7 +181,8 @@ def main():
     }
 
     text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    OUT.write_text(f"window.SAN14_DATA = {text};\n", encoding="utf-8")
+    with OUT.open("w", encoding="utf-8", newline="\n") as out:
+        out.write(f"window.SAN14_DATA = {text};\n")
     print(f"wrote {OUT} ({OUT.stat().st_size:,} bytes)")
 
 
