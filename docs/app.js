@@ -128,6 +128,15 @@
     return candidates.length > 1 && index >= 0 ? `${item.name}(${index + 1})` : item.name;
   }
 
+  function explicitDuplicateId(token) {
+    const match = token.match(/^(.+)\((\d+)\)$/);
+    if (!match) return null;
+    const candidates = DATA.byName[match[1]] || [];
+    if (candidates.length <= 1) return null;
+    const index = Number(match[2]) - 1;
+    return candidates[index] || null;
+  }
+
   function statsLine(id) {
     const stats = officer(id)?.stats;
     if (!stats) return "";
@@ -186,11 +195,12 @@
 
   function setupDatalist() {
     const fragment = document.createDocumentFragment();
-    Object.keys(DATA.byName)
-      .sort((a, b) => a.localeCompare(b, "ko"))
-      .forEach((name) => {
+    [...officers.values()]
+      .sort((a, b) => a.name.localeCompare(b.name, "ko") || a.id - b.id)
+      .forEach((item) => {
         const option = document.createElement("option");
-        option.value = name;
+        option.value = displayName(item.id);
+        if ((DATA.byName[item.name] || []).length > 1) option.label = statsLine(item.id);
         fragment.appendChild(option);
       });
     els.datalist.appendChild(fragment);
@@ -322,6 +332,12 @@
         const id = Number(idMatch[1]);
         if (officers.has(id)) fixed.push({ token, id });
         else warnings.push(`ID ${id}를 찾지 못했습니다.`);
+        continue;
+      }
+
+      const explicitId = explicitDuplicateId(token);
+      if (explicitId) {
+        fixed.push({ token, id: explicitId });
         continue;
       }
 
