@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>삼국지14 장수 편성기</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="control-pane">
+        <div class="brand">
+          <span class="brand-mark">14</span>
+          <div>
+            <h1>삼국지14 편성기</h1>
+            <p>친애 · 능력 · 개성 · 버프 중첩</p>
+          </div>
+        </div>
+
+        <div class="segmented" role="tablist" aria-label="분석 모드">
+          <button class="segment active" type="button" data-mode="roster">보유 장수 편성</button>
+          <button class="segment" type="button" data-mode="single">중심 분석</button>
+        </div>
+
+        <section class="form-section" data-panel="roster">
+          <label for="rosterInput">보유 장수</label>
+          <textarea id="rosterInput" spellcheck="false"></textarea>
+          <div class="inline-controls">
+            <label for="maxSize">분파 인원</label>
+            <input id="maxSize" type="number" min="3" max="10" value="10" />
+            <button id="sampleRoster" class="ghost-button" type="button">샘플</button>
+          </div>
+        </section>
+
+        <section class="form-section hidden" data-panel="single">
+          <label for="centerInput">중심 장수</label>
+          <input id="centerInput" list="officerNames" value="관우" />
+          <div class="inline-controls">
+            <label for="hopDepth">탐색</label>
+            <input id="hopDepth" type="number" min="1" max="4" value="4" />
+            <span class="unit">hop</span>
+          </div>
+        </section>
+
+        <datalist id="officerNames"></datalist>
+
+        <div class="check-row">
+          <label>
+            <input id="showMarriage" type="checkbox" checked />
+            결혼 후보 표시
+          </label>
+          <label>
+            <input id="showOath" type="checkbox" checked />
+            의형제 후보 표시
+          </label>
+        </div>
+
+        <button id="runButton" class="run-button" type="button">분석</button>
+      </aside>
+
+      <section class="result-pane">
+        <div class="result-header">
+          <div>
+            <h2 id="resultTitle">보유 장수 편성 결과</h2>
+            <p id="resultMeta">여무장은 기본 기혼 상태로 계산됩니다.</p>
+          </div>
+          <div id="scoreBadge" class="score-badge">READY</div>
+        </div>
+        <div id="warnings" class="warnings"></div>
+        <div id="results" class="results"></div>
+      </section>
+    </main>
+
+    <template id="groupTemplate">
+      <article class="group-card">
+        <div class="group-top">
+          <h3></h3>
+          <span class="group-score"></span>
+        </div>
+        <div class="member-list"></div>
+        <div class="relation-list"></div>
+        <div class="recommendations"></div>
+      </article>
+    </template>
+
+    <script src="./data.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
