@@ -1601,7 +1601,6 @@
     setupGraph();
     setupDatalist();
     bindEvents();
-    els.rosterInput.value = SAMPLE_ROSTER;
     updateRosterLimitControls();
     updateDuplicateSelectors();
     renderRoster();
