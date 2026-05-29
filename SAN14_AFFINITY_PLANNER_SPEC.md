@@ -104,7 +104,7 @@ C:\Users\User\Downloads\삼국지14_전체무장_공유(통합본)의 사본.xls
 현재 구현 구조:
 
 ```text
-webapp/
+docs/
 ├─ index.html
 ├─ styles.css
 ├─ app.js
@@ -129,7 +129,7 @@ README.md     : 실행 및 데이터 갱신 안내
 브라우저에서는 별도 서버 없이 다음 파일을 직접 열어 실행할 수 있다.
 
 ```text
-webapp/index.html
+docs/index.html
 ```
 
 ## 4. UX 기획
@@ -493,7 +493,7 @@ repo/
 └─ README.md
 ```
 
-현재 `webapp/` 폴더는 GitHub Pages용으로 `docs/`에 복사하거나 이름을 바꿔 사용할 수 있다.
+현재 `docs/` 폴더는 GitHub Pages의 `/docs` 배포 소스로 사용할 수 있다.
 
 GitHub Release는 버전 배포용으로 사용한다.
 
@@ -522,26 +522,26 @@ GitHub Release: 특정 버전 다운로드/보관
 주요 파일:
 
 ```text
-webapp/index.html
-webapp/styles.css
-webapp/app.js
-webapp/data.js
-webapp/build_data.py
-webapp/verify.mjs
-webapp/README.md
+docs/index.html
+docs/styles.css
+docs/app.js
+docs/data.js
+docs/build_data.py
+docs/verify.mjs
+docs/README.md
 ```
 
 데이터 갱신:
 
 ```powershell
-python .\webapp\build_data.py
+python .\docs\build_data.py
 ```
 
 검증:
 
 ```powershell
-node --check '.\webapp\app.js'
-node '.\webapp\verify.mjs'
+node --check '.\docs\app.js'
+node '.\docs\verify.mjs'
 ```
 
 ## 14. 참고사항과 한계

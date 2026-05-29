@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import vm from "node:vm";
 
-const root = resolve("webapp");
+const root = resolve("docs");
 const [html, app, dataScript] = await Promise.all([
   readFile(resolve(root, "index.html"), "utf-8"),
   readFile(resolve(root, "app.js"), "utf-8"),

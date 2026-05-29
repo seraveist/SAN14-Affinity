@@ -34,7 +34,7 @@
 기본값은 저장소 루트의 `affinity_index.json`과 `삼국지14_전체무장_공유(통합본)의 사본.xlsx`입니다.
 
 ```powershell
-python .\webapp\build_data.py
+python .\docs\build_data.py
 ```
 
 다른 위치의 파일을 사용하려면 환경변수로 지정할 수 있습니다.
@@ -42,5 +42,5 @@ python .\webapp\build_data.py
 ```powershell
 $env:SAN14_AFFINITY_JSON = 'C:\path\to\affinity_index.json'
 $env:SAN14_WORKBOOK = 'C:\path\to\삼국지14_전체무장_공유(통합본)의 사본.xlsx'
-python .\webapp\build_data.py
+python .\docs\build_data.py
 ```
