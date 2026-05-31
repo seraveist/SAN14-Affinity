@@ -161,6 +161,10 @@ textarea {
   resize: vertical;
 }
 
+.compact-textarea {
+  min-height: 76px;
+}
+
 input,
 select {
   height: 42px;
@@ -312,6 +316,32 @@ h2 {
 .result-tab.active {
   background: var(--ink);
   color: #fffdf8;
+}
+
+.recommendation-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.recommendation-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.recommendation-filter input {
+  width: auto;
+  height: auto;
+  margin: 0;
 }
 
 .warnings {

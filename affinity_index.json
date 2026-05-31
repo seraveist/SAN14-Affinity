@@ -6564,25 +6564,28 @@
       "name": "순욱",
       "support_flag": false,
       "relations": {
-        "☆": [],
+        "☆": [
+          "순유"
+        ],
         "◎": [
-          "가충",
-          "순상",
-          "순의"
+          "곽가",
+          "정욱",
+          "조조",
+          "종요"
         ],
         "○": [
-          "사마소",
-          "사마염",
+          "두기",
+          "순상",
           "순심",
           "순욱",
           "순운",
-          "순유",
+          "순의",
           "순찬",
-          "종요"
+          "양표",
+          "진군"
         ],
         "X": [
-          "사마유",
-          "장화"
+          "동탁"
         ]
       }
     },
@@ -6647,28 +6650,25 @@
       "name": "순욱",
       "support_flag": false,
       "relations": {
-        "☆": [
-          "순유"
-        ],
+        "☆": [],
         "◎": [
-          "곽가",
-          "정욱",
-          "조조",
-          "종요"
+          "가충",
+          "순상",
+          "순의"
         ],
         "○": [
-          "두기",
-          "순상",
+          "사마소",
+          "사마염",
           "순심",
           "순욱",
           "순운",
-          "순의",
+          "순유",
           "순찬",
-          "양표",
-          "진군"
+          "종요"
         ],
         "X": [
-          "동탁"
+          "사마유",
+          "장화"
         ]
       }
     },
@@ -17934,21 +17934,6 @@
       "relations": {
         "☆": [],
         "◎": [
-          "장승"
-        ],
-        "○": [
-          "노숙"
-        ],
-        "X": []
-      }
-    },
-    {
-      "id": 998,
-      "name": "노숙",
-      "support_flag": false,
-      "relations": {
-        "☆": [],
-        "◎": [
           "여몽",
           "유엽",
           "제갈근",
@@ -17960,6 +17945,21 @@
         "X": [
           "장소"
         ]
+      }
+    },
+    {
+      "id": 998,
+      "name": "노숙",
+      "support_flag": false,
+      "relations": {
+        "☆": [],
+        "◎": [
+          "장승"
+        ],
+        "○": [
+          "노숙"
+        ],
+        "X": []
       }
     },
     {
@@ -31460,8 +31460,8 @@
       "relation": "◎",
       "target_name": "노숙",
       "target_ids": [
-        997,
-        998
+        998,
+        997
       ]
     },
     {
@@ -31888,7 +31888,7 @@
       ]
     },
     {
-      "source_id": 393,
+      "source_id": 397,
       "source_name": "순욱",
       "relation": "◎",
       "target_name": "가충",
@@ -31897,7 +31897,7 @@
       ]
     },
     {
-      "source_id": 393,
+      "source_id": 397,
       "source_name": "순욱",
       "relation": "◎",
       "target_name": "순상",
@@ -31906,7 +31906,7 @@
       ]
     },
     {
-      "source_id": 393,
+      "source_id": 397,
       "source_name": "순욱",
       "relation": "◎",
       "target_name": "순의",
@@ -31915,7 +31915,7 @@
       ]
     },
     {
-      "source_id": 393,
+      "source_id": 397,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "사마소",
@@ -31924,7 +31924,7 @@
       ]
     },
     {
-      "source_id": 393,
+      "source_id": 397,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "사마염",
@@ -31933,7 +31933,7 @@
       ]
     },
     {
-      "source_id": 393,
+      "source_id": 397,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "순심",
@@ -31942,7 +31942,7 @@
       ]
     },
     {
-      "source_id": 393,
+      "source_id": 397,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "순욱",
@@ -31952,7 +31952,7 @@
       ]
     },
     {
-      "source_id": 393,
+      "source_id": 397,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "순운",
@@ -31961,7 +31961,7 @@
       ]
     },
     {
-      "source_id": 393,
+      "source_id": 397,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "순유",
@@ -31970,7 +31970,7 @@
       ]
     },
     {
-      "source_id": 393,
+      "source_id": 397,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "순찬",
@@ -31979,7 +31979,7 @@
       ]
     },
     {
-      "source_id": 393,
+      "source_id": 397,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "종요",
@@ -31988,7 +31988,7 @@
       ]
     },
     {
-      "source_id": 393,
+      "source_id": 397,
       "source_name": "순욱",
       "relation": "X",
       "target_name": "사마유",
@@ -31997,7 +31997,7 @@
       ]
     },
     {
-      "source_id": 393,
+      "source_id": 397,
       "source_name": "순욱",
       "relation": "X",
       "target_name": "장화",
@@ -32181,7 +32181,7 @@
       ]
     },
     {
-      "source_id": 397,
+      "source_id": 393,
       "source_name": "순욱",
       "relation": "☆",
       "target_name": "순유",
@@ -32190,7 +32190,7 @@
       ]
     },
     {
-      "source_id": 397,
+      "source_id": 393,
       "source_name": "순욱",
       "relation": "◎",
       "target_name": "곽가",
@@ -32199,7 +32199,7 @@
       ]
     },
     {
-      "source_id": 397,
+      "source_id": 393,
       "source_name": "순욱",
       "relation": "◎",
       "target_name": "정욱",
@@ -32208,7 +32208,7 @@
       ]
     },
     {
-      "source_id": 397,
+      "source_id": 393,
       "source_name": "순욱",
       "relation": "◎",
       "target_name": "조조",
@@ -32217,7 +32217,7 @@
       ]
     },
     {
-      "source_id": 397,
+      "source_id": 393,
       "source_name": "순욱",
       "relation": "◎",
       "target_name": "종요",
@@ -32226,7 +32226,7 @@
       ]
     },
     {
-      "source_id": 397,
+      "source_id": 393,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "두기",
@@ -32235,7 +32235,7 @@
       ]
     },
     {
-      "source_id": 397,
+      "source_id": 393,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "순상",
@@ -32244,7 +32244,7 @@
       ]
     },
     {
-      "source_id": 397,
+      "source_id": 393,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "순심",
@@ -32253,7 +32253,7 @@
       ]
     },
     {
-      "source_id": 397,
+      "source_id": 393,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "순욱",
@@ -32263,7 +32263,7 @@
       ]
     },
     {
-      "source_id": 397,
+      "source_id": 393,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "순운",
@@ -32272,7 +32272,7 @@
       ]
     },
     {
-      "source_id": 397,
+      "source_id": 393,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "순의",
@@ -32281,7 +32281,7 @@
       ]
     },
     {
-      "source_id": 397,
+      "source_id": 393,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "순찬",
@@ -32290,7 +32290,7 @@
       ]
     },
     {
-      "source_id": 397,
+      "source_id": 393,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "양표",
@@ -32299,7 +32299,7 @@
       ]
     },
     {
-      "source_id": 397,
+      "source_id": 393,
       "source_name": "순욱",
       "relation": "○",
       "target_name": "진군",
@@ -32308,7 +32308,7 @@
       ]
     },
     {
-      "source_id": 397,
+      "source_id": 393,
       "source_name": "순욱",
       "relation": "X",
       "target_name": "동탁",
@@ -33690,8 +33690,8 @@
       "relation": "◎",
       "target_name": "노숙",
       "target_ids": [
-        997,
-        998
+        998,
+        997
       ]
     },
     {
@@ -55171,8 +55171,8 @@
       "relation": "X",
       "target_name": "노숙",
       "target_ids": [
-        997,
-        998
+        998,
+        997
       ]
     },
     {
@@ -55308,8 +55308,8 @@
       "relation": "◎",
       "target_name": "노숙",
       "target_ids": [
-        997,
-        998
+        998,
+        997
       ]
     },
     {
@@ -65029,8 +65029,8 @@
       "relation": "◎",
       "target_name": "노숙",
       "target_ids": [
-        997,
-        998
+        998,
+        997
       ]
     },
     {
@@ -65807,8 +65807,8 @@
       "relation": "◎",
       "target_name": "노숙",
       "target_ids": [
-        997,
-        998
+        998,
+        997
       ]
     },
     {
@@ -66011,7 +66011,7 @@
       ]
     },
     {
-      "source_id": 997,
+      "source_id": 998,
       "source_name": "노숙",
       "relation": "◎",
       "target_name": "장승",
@@ -66021,17 +66021,17 @@
       ]
     },
     {
-      "source_id": 997,
+      "source_id": 998,
       "source_name": "노숙",
       "relation": "○",
       "target_name": "노숙",
       "target_ids": [
-        997,
-        998
+        998,
+        997
       ]
     },
     {
-      "source_id": 998,
+      "source_id": 997,
       "source_name": "노숙",
       "relation": "◎",
       "target_name": "여몽",
@@ -66040,7 +66040,7 @@
       ]
     },
     {
-      "source_id": 998,
+      "source_id": 997,
       "source_name": "노숙",
       "relation": "◎",
       "target_name": "유엽",
@@ -66049,7 +66049,7 @@
       ]
     },
     {
-      "source_id": 998,
+      "source_id": 997,
       "source_name": "노숙",
       "relation": "◎",
       "target_name": "제갈근",
@@ -66058,7 +66058,7 @@
       ]
     },
     {
-      "source_id": 998,
+      "source_id": 997,
       "source_name": "노숙",
       "relation": "◎",
       "target_name": "주유",
@@ -66067,17 +66067,17 @@
       ]
     },
     {
-      "source_id": 998,
+      "source_id": 997,
       "source_name": "노숙",
       "relation": "○",
       "target_name": "노숙",
       "target_ids": [
-        997,
-        998
+        998,
+        997
       ]
     },
     {
-      "source_id": 998,
+      "source_id": 997,
       "source_name": "노숙",
       "relation": "X",
       "target_name": "장소",
@@ -72628,25 +72628,28 @@
         "name": "순욱",
         "support_flag": false,
         "relations": {
-          "☆": [],
+          "☆": [
+            "순유"
+          ],
           "◎": [
-            "가충",
-            "순상",
-            "순의"
+            "곽가",
+            "정욱",
+            "조조",
+            "종요"
           ],
           "○": [
-            "사마소",
-            "사마염",
+            "두기",
+            "순상",
             "순심",
             "순욱",
             "순운",
-            "순유",
+            "순의",
             "순찬",
-            "종요"
+            "양표",
+            "진군"
           ],
           "X": [
-            "사마유",
-            "장화"
+            "동탁"
           ]
         }
       },
@@ -72711,28 +72714,25 @@
         "name": "순욱",
         "support_flag": false,
         "relations": {
-          "☆": [
-            "순유"
-          ],
+          "☆": [],
           "◎": [
-            "곽가",
-            "정욱",
-            "조조",
-            "종요"
+            "가충",
+            "순상",
+            "순의"
           ],
           "○": [
-            "두기",
-            "순상",
+            "사마소",
+            "사마염",
             "순심",
             "순욱",
             "순운",
-            "순의",
+            "순유",
             "순찬",
-            "양표",
-            "진군"
+            "종요"
           ],
           "X": [
-            "동탁"
+            "사마유",
+            "장화"
           ]
         }
       },
@@ -83998,21 +83998,6 @@
         "relations": {
           "☆": [],
           "◎": [
-            "장승"
-          ],
-          "○": [
-            "노숙"
-          ],
-          "X": []
-        }
-      },
-      "998": {
-        "id": 998,
-        "name": "노숙",
-        "support_flag": false,
-        "relations": {
-          "☆": [],
-          "◎": [
             "여몽",
             "유엽",
             "제갈근",
@@ -84024,6 +84009,21 @@
           "X": [
             "장소"
           ]
+        }
+      },
+      "998": {
+        "id": 998,
+        "name": "노숙",
+        "support_flag": false,
+        "relations": {
+          "☆": [],
+          "◎": [
+            "장승"
+          ],
+          "○": [
+            "노숙"
+          ],
+          "X": []
         }
       },
       "999": {
@@ -91858,7 +91858,7 @@
           "relation": "○"
         },
         {
-          "source_id": 393,
+          "source_id": 397,
           "source_name": "순욱",
           "relation": "○"
         },
@@ -92148,7 +92148,7 @@
           "relation": "X"
         },
         {
-          "source_id": 397,
+          "source_id": 393,
           "source_name": "순욱",
           "relation": "◎"
         },
@@ -93049,7 +93049,7 @@
           "relation": "X"
         },
         {
-          "source_id": 397,
+          "source_id": 393,
           "source_name": "순욱",
           "relation": "X"
         },
@@ -93751,7 +93751,7 @@
           "relation": "○"
         },
         {
-          "source_id": 997,
+          "source_id": 998,
           "source_name": "노숙",
           "relation": "◎"
         }
@@ -94199,7 +94199,7 @@
           "relation": "○"
         },
         {
-          "source_id": 393,
+          "source_id": 397,
           "source_name": "순욱",
           "relation": "◎"
         },
@@ -94214,7 +94214,7 @@
           "relation": "○"
         },
         {
-          "source_id": 397,
+          "source_id": 393,
           "source_name": "순욱",
           "relation": "○"
         },
@@ -94738,7 +94738,7 @@
           "relation": "◎"
         },
         {
-          "source_id": 393,
+          "source_id": 397,
           "source_name": "순욱",
           "relation": "○"
         },
@@ -94825,7 +94825,7 @@
           "relation": "○"
         },
         {
-          "source_id": 393,
+          "source_id": 397,
           "source_name": "순욱",
           "relation": "X"
         }
@@ -96963,7 +96963,7 @@
           "relation": "○"
         },
         {
-          "source_id": 397,
+          "source_id": 393,
           "source_name": "순욱",
           "relation": "○"
         },
@@ -97065,7 +97065,7 @@
           "relation": "X"
         },
         {
-          "source_id": 998,
+          "source_id": 997,
           "source_name": "노숙",
           "relation": "X"
         }
@@ -97586,7 +97586,7 @@
           "relation": "○"
         },
         {
-          "source_id": 393,
+          "source_id": 397,
           "source_name": "순욱",
           "relation": "◎"
         },
@@ -98221,7 +98221,7 @@
           "relation": "○"
         },
         {
-          "source_id": 397,
+          "source_id": 393,
           "source_name": "순욱",
           "relation": "◎"
         },
@@ -98295,7 +98295,7 @@
           "relation": "X"
         },
         {
-          "source_id": 393,
+          "source_id": 397,
           "source_name": "순욱",
           "relation": "○"
         },
@@ -98320,7 +98320,7 @@
           "relation": "○"
         },
         {
-          "source_id": 397,
+          "source_id": 393,
           "source_name": "순욱",
           "relation": "○"
         },
@@ -98417,7 +98417,7 @@
           "relation": "◎"
         },
         {
-          "source_id": 393,
+          "source_id": 397,
           "source_name": "순욱",
           "relation": "○"
         },
@@ -98432,7 +98432,7 @@
           "relation": "○"
         },
         {
-          "source_id": 397,
+          "source_id": 393,
           "source_name": "순욱",
           "relation": "☆"
         },
@@ -98504,7 +98504,7 @@
           "relation": "◎"
         },
         {
-          "source_id": 998,
+          "source_id": 997,
           "source_name": "노숙",
           "relation": "◎"
         }
@@ -98516,7 +98516,7 @@
           "relation": "◎"
         },
         {
-          "source_id": 397,
+          "source_id": 393,
           "source_name": "순욱",
           "relation": "◎"
         },
@@ -100724,7 +100724,7 @@
           "relation": "○"
         },
         {
-          "source_id": 393,
+          "source_id": 397,
           "source_name": "순욱",
           "relation": "○"
         },
@@ -100739,7 +100739,7 @@
           "relation": "○"
         },
         {
-          "source_id": 397,
+          "source_id": 393,
           "source_name": "순욱",
           "relation": "○"
         },
@@ -101106,7 +101106,7 @@
           "relation": "X"
         },
         {
-          "source_id": 393,
+          "source_id": 397,
           "source_name": "순욱",
           "relation": "○"
         },
@@ -101116,7 +101116,7 @@
           "relation": "○"
         },
         {
-          "source_id": 397,
+          "source_id": 393,
           "source_name": "순욱",
           "relation": "○"
         },
@@ -101308,7 +101308,7 @@
           "relation": "○"
         },
         {
-          "source_id": 393,
+          "source_id": 397,
           "source_name": "순욱",
           "relation": "◎"
         },
@@ -101318,7 +101318,7 @@
           "relation": "○"
         },
         {
-          "source_id": 397,
+          "source_id": 393,
           "source_name": "순욱",
           "relation": "○"
         },
@@ -102075,7 +102075,7 @@
           "relation": "◎"
         },
         {
-          "source_id": 998,
+          "source_id": 997,
           "source_name": "노숙",
           "relation": "◎"
         }
@@ -104117,12 +104117,12 @@
           "relation": "◎"
         },
         {
-          "source_id": 393,
+          "source_id": 397,
           "source_name": "순욱",
           "relation": "○"
         },
         {
-          "source_id": 397,
+          "source_id": 393,
           "source_name": "순욱",
           "relation": "◎"
         },
@@ -104920,7 +104920,7 @@
           "relation": "◎"
         },
         {
-          "source_id": 397,
+          "source_id": 393,
           "source_name": "순욱",
           "relation": "○"
         },
@@ -105356,7 +105356,7 @@
           "relation": "◎"
         },
         {
-          "source_id": 998,
+          "source_id": 997,
           "source_name": "노숙",
           "relation": "◎"
         }
@@ -105852,7 +105852,7 @@
           "relation": "◎"
         },
         {
-          "source_id": 998,
+          "source_id": 997,
           "source_name": "노숙",
           "relation": "◎"
         }
@@ -109963,7 +109963,7 @@
           "relation": "○"
         },
         {
-          "source_id": 393,
+          "source_id": 397,
           "source_name": "순욱",
           "relation": "X"
         },
@@ -110451,12 +110451,12 @@
           "relation": "◎"
         },
         {
-          "source_id": 997,
+          "source_id": 998,
           "source_name": "노숙",
           "relation": "○"
         },
         {
-          "source_id": 998,
+          "source_id": 997,
           "source_name": "노숙",
           "relation": "○"
         }
@@ -110894,7 +110894,7 @@
       ],
       "순심": [
         {
-          "source_id": 393,
+          "source_id": 397,
           "source_name": "순욱",
           "relation": "○"
         },
@@ -110909,7 +110909,7 @@
           "relation": "○"
         },
         {
-          "source_id": 397,
+          "source_id": 393,
           "source_name": "순욱",
           "relation": "○"
         },
@@ -110931,7 +110931,7 @@
       ],
       "두기": [
         {
-          "source_id": 397,
+          "source_id": 393,
           "source_name": "순욱",
           "relation": "○"
         },
@@ -129169,8 +129169,8 @@
           "relation": "◎",
           "target_name": "노숙",
           "target_ids": [
-            997,
-            998
+            998,
+            997
           ]
         },
         {
@@ -129527,38 +129527,52 @@
       ],
       "393": [
         {
-          "relation": "◎",
-          "target_name": "가충",
+          "relation": "☆",
+          "target_name": "순유",
           "target_ids": [
-            130
+            402
           ]
         },
         {
           "relation": "◎",
+          "target_name": "곽가",
+          "target_ids": [
+            95
+          ]
+        },
+        {
+          "relation": "◎",
+          "target_name": "정욱",
+          "target_ids": [
+            689
+          ]
+        },
+        {
+          "relation": "◎",
+          "target_name": "조조",
+          "target_ids": [
+            521
+          ]
+        },
+        {
+          "relation": "◎",
+          "target_name": "종요",
+          "target_ids": [
+            424
+          ]
+        },
+        {
+          "relation": "○",
+          "target_name": "두기",
+          "target_ids": [
+            748
+          ]
+        },
+        {
+          "relation": "○",
           "target_name": "순상",
           "target_ids": [
             401
-          ]
-        },
-        {
-          "relation": "◎",
-          "target_name": "순의",
-          "target_ids": [
-            396
-          ]
-        },
-        {
-          "relation": "○",
-          "target_name": "사마소",
-          "target_ids": [
-            348
-          ]
-        },
-        {
-          "relation": "○",
-          "target_name": "사마염",
-          "target_ids": [
-            345
           ]
         },
         {
@@ -129585,9 +129599,9 @@
         },
         {
           "relation": "○",
-          "target_name": "순유",
+          "target_name": "순의",
           "target_ids": [
-            402
+            396
           ]
         },
         {
@@ -129599,23 +129613,23 @@
         },
         {
           "relation": "○",
-          "target_name": "종요",
+          "target_name": "양표",
           "target_ids": [
-            424
+            877
+          ]
+        },
+        {
+          "relation": "○",
+          "target_name": "진군",
+          "target_ids": [
+            673
           ]
         },
         {
           "relation": "X",
-          "target_name": "사마유",
+          "target_name": "동탁",
           "target_ids": [
-            352
-          ]
-        },
-        {
-          "relation": "X",
-          "target_name": "장화",
-          "target_ids": [
-            605
+            736
           ]
         }
       ],
@@ -129762,52 +129776,38 @@
       ],
       "397": [
         {
-          "relation": "☆",
-          "target_name": "순유",
+          "relation": "◎",
+          "target_name": "가충",
           "target_ids": [
-            402
+            130
           ]
         },
         {
           "relation": "◎",
-          "target_name": "곽가",
-          "target_ids": [
-            95
-          ]
-        },
-        {
-          "relation": "◎",
-          "target_name": "정욱",
-          "target_ids": [
-            689
-          ]
-        },
-        {
-          "relation": "◎",
-          "target_name": "조조",
-          "target_ids": [
-            521
-          ]
-        },
-        {
-          "relation": "◎",
-          "target_name": "종요",
-          "target_ids": [
-            424
-          ]
-        },
-        {
-          "relation": "○",
-          "target_name": "두기",
-          "target_ids": [
-            748
-          ]
-        },
-        {
-          "relation": "○",
           "target_name": "순상",
           "target_ids": [
             401
+          ]
+        },
+        {
+          "relation": "◎",
+          "target_name": "순의",
+          "target_ids": [
+            396
+          ]
+        },
+        {
+          "relation": "○",
+          "target_name": "사마소",
+          "target_ids": [
+            348
+          ]
+        },
+        {
+          "relation": "○",
+          "target_name": "사마염",
+          "target_ids": [
+            345
           ]
         },
         {
@@ -129834,9 +129834,9 @@
         },
         {
           "relation": "○",
-          "target_name": "순의",
+          "target_name": "순유",
           "target_ids": [
-            396
+            402
           ]
         },
         {
@@ -129848,23 +129848,23 @@
         },
         {
           "relation": "○",
-          "target_name": "양표",
+          "target_name": "종요",
           "target_ids": [
-            877
-          ]
-        },
-        {
-          "relation": "○",
-          "target_name": "진군",
-          "target_ids": [
-            673
+            424
           ]
         },
         {
           "relation": "X",
-          "target_name": "동탁",
+          "target_name": "사마유",
           "target_ids": [
-            736
+            352
+          ]
+        },
+        {
+          "relation": "X",
+          "target_name": "장화",
+          "target_ids": [
+            605
           ]
         }
       ],
@@ -130997,8 +130997,8 @@
           "relation": "◎",
           "target_name": "노숙",
           "target_ids": [
-            997,
-            998
+            998,
+            997
           ]
         },
         {
@@ -148118,8 +148118,8 @@
           "relation": "X",
           "target_name": "노숙",
           "target_ids": [
-            997,
-            998
+            998,
+            997
           ]
         },
         {
@@ -148233,8 +148233,8 @@
           "relation": "◎",
           "target_name": "노숙",
           "target_ids": [
-            997,
-            998
+            998,
+            997
           ]
         },
         {
@@ -156366,8 +156366,8 @@
           "relation": "◎",
           "target_name": "노숙",
           "target_ids": [
-            997,
-            998
+            998,
+            997
           ]
         },
         {
@@ -157018,8 +157018,8 @@
           "relation": "◎",
           "target_name": "노숙",
           "target_ids": [
-            997,
-            998
+            998,
+            997
           ]
         },
         {
@@ -157195,24 +157195,6 @@
       "997": [
         {
           "relation": "◎",
-          "target_name": "장승",
-          "target_ids": [
-            634,
-            635
-          ]
-        },
-        {
-          "relation": "○",
-          "target_name": "노숙",
-          "target_ids": [
-            997,
-            998
-          ]
-        }
-      ],
-      "998": [
-        {
-          "relation": "◎",
           "target_name": "여몽",
           "target_ids": [
             988
@@ -157243,8 +157225,8 @@
           "relation": "○",
           "target_name": "노숙",
           "target_ids": [
-            997,
-            998
+            998,
+            997
           ]
         },
         {
@@ -157253,6 +157235,24 @@
           "target_ids": [
             631,
             633
+          ]
+        }
+      ],
+      "998": [
+        {
+          "relation": "◎",
+          "target_name": "장승",
+          "target_ids": [
+            634,
+            635
+          ]
+        },
+        {
+          "relation": "○",
+          "target_name": "노숙",
+          "target_ids": [
+            998,
+            997
           ]
         }
       ],

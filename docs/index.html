@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>삼국지14 친애 편성기</title>
-    <link rel="stylesheet" href="./styles.css?v=20260529-3" />
+    <link rel="stylesheet" href="./styles.css?v=20260531-v12" />
   </head>
   <body>
     <main class="app-shell">
@@ -31,10 +31,12 @@
             </label>
             <label class="limit-field" for="maxSize">
               <span>집단당 최대 인원</span>
-              <input id="maxSize" type="number" min="3" max="20" value="10" />
+              <input id="maxSize" type="number" min="3" max="30" value="20" />
             </label>
             <button id="sampleRoster" class="ghost-button" type="button">샘플</button>
           </div>
+          <label for="coreInput">코어 고정</label>
+          <textarea id="coreInput" class="compact-textarea" spellcheck="false" autocomplete="off"></textarea>
           <div id="duplicateSelectors" class="duplicate-selectors hidden"></div>
         </section>
 
@@ -63,7 +65,25 @@
         </div>
         <div id="resultTabs" class="result-tabs" role="tablist" aria-label="결과 보기">
           <button class="result-tab active" type="button" data-result-tab="formation">편성 결과</button>
-          <button class="result-tab" type="button" data-result-tab="oath">의형제 추천</button>
+          <button class="result-tab" type="button" data-result-tab="oath">의형제/결혼 추천</button>
+        </div>
+        <div id="recommendationFilters" class="recommendation-filters hidden" aria-label="추천 필터">
+          <label class="recommendation-filter">
+            <input type="checkbox" data-rec-filter="oath" checked />
+            <span>의형제</span>
+          </label>
+          <label class="recommendation-filter">
+            <input type="checkbox" data-rec-filter="marriage" checked />
+            <span>결혼</span>
+          </label>
+          <label class="recommendation-filter">
+            <input type="checkbox" data-rec-filter="rescue" checked />
+            <span>미편성 구제</span>
+          </label>
+          <label class="recommendation-filter">
+            <input type="checkbox" data-rec-filter="support" checked />
+            <span>응원/악주 보강</span>
+          </label>
         </div>
         <div id="warnings" class="warnings"></div>
         <div id="results" class="results"></div>
@@ -82,7 +102,7 @@
       </article>
     </template>
 
-    <script src="./data.js?v=20260529-3"></script>
-    <script src="./app.js?v=20260529-3"></script>
+    <script src="./data.js?v=20260531-v12"></script>
+    <script src="./app.js?v=20260531-v16"></script>
   </body>
 </html>

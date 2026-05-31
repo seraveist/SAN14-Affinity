@@ -3,8 +3,11 @@
   const REL_VALUE = { "☆": 3, "◎": 2, "○": 1 };
   const REL_LABEL = { 3: "☆", 2: "◎", 1: "○" };
   const REL_CLASS = { "☆": "star", "◎": "double", "○": "single" };
-  const MAX_GROUP_SIZE = 20;
+  const MAX_GROUP_SIZE = 30;
   const MIN_GROUP_SIZE = 3;
+  const RECOMMENDATION_LIMIT = 6;
+  const SUPPORT_TRAITS = new Set(["보좌", "응원", "악주"]);
+  const TIER_ORDER = { reserve: 0, support: 1, upper: 2, key: 3, core: 4 };
   const SAMPLE_ROSTER =
     "유비, 관우, 장비, 황충, 조운, 마초, 마대, 제갈량, 서서, 방통, 마속, 주창, 관평, 관흥, 관은병, 엄안, 법정, 석도, 공손찬, 후씨, 감씨, 미씨, 황월영, 마운록, 노식, 주준, 황보숭, 양씨, 아귀, 등지, 진도, 요화, 위연, 이엄, 이회";
 
@@ -22,10 +25,13 @@
     resultTabs: document.querySelector("#resultTabs"),
     resultTabButtons: [...document.querySelectorAll(".result-tab")],
     rosterInput: document.querySelector("#rosterInput"),
+    coreInput: document.querySelector("#coreInput"),
     centerInput: document.querySelector("#centerInput"),
     groupCount: document.querySelector("#groupCount"),
     maxSize: document.querySelector("#maxSize"),
     duplicateSelectors: document.querySelector("#duplicateSelectors"),
+    recommendationFilters: document.querySelector("#recommendationFilters"),
+    recommendationFilterInputs: [...document.querySelectorAll("[data-rec-filter]")],
     hopDepth: document.querySelector("#hopDepth"),
     sampleRoster: document.querySelector("#sampleRoster"),
     runButton: document.querySelector("#runButton"),
@@ -41,7 +47,8 @@
 
   let mode = "roster";
   let activeResultTab = "formation";
-  const rosterLimitValues = { groupCount: 4, maxSize: MAX_GROUP_SIZE };
+  const rosterLimitValues = { groupCount: 4, maxSize: 20 };
+  const recommendationFilterValues = { oath: true, marriage: true, rescue: true, support: true };
   const duplicateSelectionValues = new Map();
 
   function edgeKey(source, target) {
@@ -64,6 +71,65 @@
     return officer(id)?.traitScore || 0;
   }
 
+  function officerTraits(id) {
+    return officer(id)?.traits?.map((trait) => trait.name) || [];
+  }
+
+  function hasSupportTrait(id) {
+    return officerTraits(id).some((name) => SUPPORT_TRAITS.has(name));
+  }
+
+  function isFemale(id) {
+    return officer(id)?.gender === "여";
+  }
+
+  function fieldPower(id) {
+    const stats = officer(id)?.stats || {};
+    const leadership = stats.leadership || 0;
+    const war = stats.war || 0;
+    const intelligence = stats.intelligence || 0;
+    const politics = stats.politics || 0;
+    const highBattleStat = Math.max(war, intelligence);
+    const lowBattleStat = Math.min(war, intelligence);
+    return leadership * 1.5 + highBattleStat + lowBattleStat * 0.25 + politics * 0.15 + traitScore(id) * 4;
+  }
+
+  function roleTags(id) {
+    const stats = officer(id)?.stats || {};
+    const tags = [];
+    if ((stats.leadership || 0) >= 75 && (stats.war || 0) >= 70) tags.push("전투");
+    if ((stats.leadership || 0) >= 70 && (stats.intelligence || 0) >= 70) tags.push("지휘");
+    if ((stats.intelligence || 0) >= 80 && (stats.politics || 0) >= 70) tags.push("참모");
+    if ((stats.politics || 0) >= 75) tags.push("실무");
+    if (hasSupportTrait(id)) tags.push("지원");
+    return tags.length ? tags : ["보조"];
+  }
+
+  function roleLabel(id) {
+    return roleTags(id).filter((tag) => tag !== "지원").slice(0, 2).join("/") || "보조";
+  }
+
+  function affinityReach(id, scope = null) {
+    const pool = scope || [...(neighbors.get(id)?.keys() || [])];
+    let links = 0;
+    let quality = 0;
+    let star = 0;
+    for (const other of pool) {
+      if (other === id) continue;
+      const relation = relationBetween(id, other);
+      if (!relation) continue;
+      links += 1;
+      quality += relation.value;
+      if (relation.value === 3) star += 1;
+    }
+    return {
+      links,
+      quality,
+      star,
+      score: links * 100 + quality * 18 + star * 24 + fieldPower(id) * 0.04,
+    };
+  }
+
   function clampInteger(value, min, max, fallback) {
     if (value === "" || value === null || value === undefined) {
       return Math.max(min, Math.min(max, fallback));
@@ -81,10 +147,16 @@
     return parseNames(els.rosterInput.value).length;
   }
 
-  function updateRosterLimitControls(rosterSize = rosterTokenCount()) {
+  function coreTokenCount() {
+    return parseNames(els.coreInput.value).length;
+  }
+
+  function updateRosterLimitControls(rosterSize = rosterTokenCount(), minTargetCount = coreTokenCount()) {
     const maxSize = clampInteger(els.maxSize.value, MIN_GROUP_SIZE, MAX_GROUP_SIZE, rosterLimitValues.maxSize);
-    const minCount = minGroupCount(rosterSize, maxSize);
-    const maxCount = Math.max(minCount, rosterSize || 1);
+    const minCount = Math.max(1, minTargetCount);
+    const maxCount = rosterSize
+      ? Math.max(minCount, rosterSize)
+      : Math.max(minCount, rosterLimitValues.groupCount, Number(els.groupCount.value) || 1);
     const targetCount = clampInteger(els.groupCount.value, minCount, maxCount, rosterLimitValues.groupCount);
 
     rosterLimitValues.maxSize = maxSize;
@@ -97,26 +169,26 @@
     els.groupCount.value = targetCount;
   }
 
-  function planningOptions(rosterSize, warnings) {
+  function planningOptions(rosterSize, warnings, minTargetCount = 1) {
     const rawMaxSize = Number(els.maxSize.value);
     const maxSize = clampInteger(rawMaxSize, MIN_GROUP_SIZE, MAX_GROUP_SIZE, rosterLimitValues.maxSize);
     if (Number.isFinite(rawMaxSize) && Math.round(rawMaxSize) !== maxSize) {
       warnings.push(`집단당 최대 인원은 ${MIN_GROUP_SIZE}~${MAX_GROUP_SIZE} 범위로 조정됩니다.`);
     }
 
-    const minCount = minGroupCount(rosterSize, maxSize);
+    const minCount = Math.max(1, minTargetCount);
     const maxCount = Math.max(minCount, rosterSize);
     const rawTargetCount = Number(els.groupCount.value);
     const targetCount = clampInteger(rawTargetCount, minCount, maxCount, rosterLimitValues.groupCount);
     if (Number.isFinite(rawTargetCount) && Math.round(rawTargetCount) !== targetCount) {
-      warnings.push(`목표 집단 수는 최대 ${maxSize}명 기준 ${minCount}~${maxCount} 범위로 조정됩니다.`);
+      warnings.push(`목표 집단 수는 ${minCount}~${maxCount} 범위로 조정됩니다.`);
     }
 
     rosterLimitValues.maxSize = maxSize;
     rosterLimitValues.groupCount = targetCount;
     els.maxSize.value = maxSize;
     els.groupCount.value = targetCount;
-    updateRosterLimitControls(rosterSize);
+    updateRosterLimitControls(rosterSize, minCount);
     return { mode: "count", maxSize, targetCount };
   }
 
@@ -208,7 +280,7 @@
 
   function parseNames(text) {
     return text
-      .split(/[\n,，]+/)
+      .split(/[\s,，、]+/)
       .map((item) => item.trim())
       .filter(Boolean);
   }
@@ -384,6 +456,28 @@
     return { ids, warnings };
   }
 
+  function resolveFixedCoreIds(rosterIds, duplicateState, warnings) {
+    const tokens = parseNames(els.coreInput.value);
+    if (!tokens.length) return [];
+
+    const resolved = resolveNames(tokens, {
+      duplicateSelections: duplicateState.selections,
+      autoAllDuplicateNames: duplicateState.autoAllDuplicateNames,
+    });
+    warnings.push(...resolved.warnings.map((warning) => `코어 고정: ${warning}`));
+
+    const rosterSet = new Set(rosterIds);
+    const fixed = [];
+    for (const id of resolved.ids) {
+      if (!rosterSet.has(id)) {
+        warnings.push(`코어 고정: ${displayName(id)} 장수는 보유 장수 목록에 없어 제외했습니다.`);
+        continue;
+      }
+      if (!fixed.includes(id)) fixed.push(id);
+    }
+    return fixed;
+  }
+
   function ambiguityScore(id, selectedIds) {
     let links = 0;
     let quality = 0;
@@ -422,18 +516,6 @@
       buff,
       edges,
     };
-  }
-
-  function combinations3(items) {
-    const rows = [];
-    for (let i = 0; i < items.length; i += 1) {
-      for (let j = i + 1; j < items.length; j += 1) {
-        for (let k = j + 1; k < items.length; k += 1) {
-          rows.push([items[i], items[j], items[k]]);
-        }
-      }
-    }
-    return rows;
   }
 
   function withVirtualOaths(oaths, callback) {
@@ -546,18 +628,545 @@
   function rankGroups(groups) {
     return groups
       .filter((group) => group.length)
-      .map((group) =>
-        [...group].sort((a, b) => {
-          const metrics = groupMetrics(group).buff;
-          return metrics.get(b) - metrics.get(a) || primary(b) - primary(a);
-        }),
-      )
+      .map((group) => {
+        const [anchor, ...members] = group;
+        const metrics = groupMetrics(group).buff;
+        return [
+          anchor,
+          ...members.sort((a, b) => metrics.get(b) - metrics.get(a) || primary(b) - primary(a)),
+        ];
+      })
       .sort((a, b) => groupMetrics(b).score - groupMetrics(a).score);
+  }
+
+  function sortUnassigned(ids) {
+    return [...ids].sort((a, b) => fieldPower(b) - fieldPower(a) || primary(b) - primary(a));
+  }
+
+  function hasRosterRelation(id, ids) {
+    return ids.some((other) => other !== id && relationBetween(id, other));
+  }
+
+  function mainStat(id) {
+    const stats = officer(id)?.stats || {};
+    return Math.max(stats.leadership || 0, stats.war || 0, stats.intelligence || 0);
+  }
+
+  function isIndependentCoreType(id) {
+    const stats = officer(id)?.stats || {};
+    return roleTags(id).includes("전투") || ((stats.leadership || 0) >= 85 && (stats.war || 0) >= 75);
+  }
+
+  function isCommandCoreType(id) {
+    return isIndependentCoreType(id) || mainStat(id) >= 90 || fieldPower(id) >= 285;
+  }
+
+  function tierInfo(id, scope = null) {
+    const stats = officer(id)?.stats || {};
+    const reach = affinityReach(id, scope);
+    const globalReach = affinityReach(id);
+    const highStat = mainStat(id);
+    const support = hasSupportTrait(id);
+    const power = fieldPower(id);
+    const key =
+      highStat >= 90 ||
+      (highStat >= 85 && traitScore(id) >= 10) ||
+      (highStat >= 85 && power >= 205);
+    const upper = key || reach.links >= 2 || highStat >= 80 || traitScore(id) >= 8 || power >= 180;
+    const eliteSupport = support && key && (highStat >= 90 || power >= 280);
+    const canLead = !support || eliteSupport;
+    const core =
+      canLead &&
+      ((reach.links >= 3 && (key || globalReach.links >= 6 || power >= 190)) ||
+        (key && reach.links >= 2) ||
+        (upper && globalReach.links >= 8 && reach.links >= 2));
+    const tier = core ? "core" : support ? "support" : key ? "key" : upper ? "upper" : "reserve";
+    const coreScore =
+      reach.score * 2.2 +
+      globalReach.score * 0.35 +
+      power * 0.85 +
+      highStat * 2.1 +
+      traitScore(id) * 18 +
+      (isIndependentCoreType(id) ? 120 : 0) +
+      (isCommandCoreType(id) ? 180 : 0) +
+      (key ? 180 : 0) +
+      (upper ? 80 : 0) -
+      (support && !upper ? 80 : 0);
+
+    return {
+      tier,
+      rank: TIER_ORDER[tier],
+      support,
+      key,
+      upper,
+      core,
+      highStat,
+      reach,
+      globalReach,
+      power,
+      coreScore,
+    };
+  }
+
+  function strongerUnselectedCorePenalty(id, selectedCores, scope) {
+    const info = tierInfo(id, scope);
+    let penalty = 0;
+    for (const other of scope) {
+      if (other === id || selectedCores.includes(other)) continue;
+      const relation = relationBetween(id, other);
+      if (!relation || relation.value < 2) continue;
+      const otherInfo = tierInfo(other, scope);
+      if (otherInfo.coreScore <= info.coreScore + 180) continue;
+      const rate = isIndependentCoreType(id) ? 0.18 : 0.42;
+      penalty = Math.max(penalty, (otherInfo.coreScore - info.coreScore) * rate + relation.value * 90);
+    }
+    return penalty;
+  }
+
+  function coreCoverageScore(id, selectedCores, scope) {
+    if (!selectedCores.length) return -strongerUnselectedCorePenalty(id, selectedCores, scope);
+
+    let unique = 0;
+    let overlap = 0;
+    for (const other of scope) {
+      if (other === id || selectedCores.includes(other)) continue;
+      const relation = relationBetween(id, other);
+      if (!relation) continue;
+
+      const selectedBest = selectedCores.reduce(
+        (best, core) => Math.max(best, relationBetween(core, other)?.value || 0),
+        0,
+      );
+      const otherInfo = tierInfo(other, scope);
+      const tierWeight = otherInfo.key ? 1.45 : otherInfo.upper ? 1.12 : otherInfo.support ? 0.8 : 0.45;
+      if (relation.value > selectedBest) unique += (relation.value - selectedBest) * 120 * tierWeight + 35;
+      else if (selectedBest) overlap += relation.value * 42 * tierWeight;
+    }
+
+    const directCorePenalty = selectedCores.reduce((sum, core) => {
+      const relation = relationBetween(id, core);
+      if (!relation) return sum;
+      return sum + relation.value * (isIndependentCoreType(id) ? 28 : 120);
+    }, 0);
+    return unique - overlap - directCorePenalty - strongerUnselectedCorePenalty(id, selectedCores, scope);
+  }
+
+  function selectedCoreCoverage(id, selectedCores) {
+    return selectedCores.reduce((best, core) => Math.max(best, relationBetween(core, id)?.value || 0), 0);
+  }
+
+  function lineMemberRows(id, scope, selectedCores) {
+    return scope
+      .filter((other) => other !== id && !selectedCores.includes(other))
+      .map((other) => {
+        const relation = relationBetween(id, other);
+        if (!relation) return null;
+        const covered = selectedCoreCoverage(other, selectedCores);
+        const unique = Math.max(0, relation.value - covered);
+        const info = tierInfo(other, scope);
+        const tierBonus = info.key ? 220 : info.upper ? 150 : info.support ? 80 : 40;
+        const coveredPenalty = covered >= relation.value ? covered * 190 : 0;
+        const value =
+          relation.value * 190 +
+          unique * 280 +
+          (relation.value === 3 ? 260 : 0) +
+          tierBonus +
+          fieldPower(other) * 0.14 -
+          coveredPenalty;
+        return { id: other, relation, covered, unique, value };
+      })
+      .filter(Boolean)
+      .filter((row) => row.relation.value >= 2 || row.unique > 0)
+      .filter((row) => row.value > 120)
+      .sort((a, b) => b.value - a.value || fieldPower(b.id) - fieldPower(a.id));
+  }
+
+  function candidateLineInfo(id, scope, selectedCores) {
+    const members = lineMemberRows(id, scope, selectedCores).slice(0, 3);
+    if (!members.length) return { members: [], score: 0, protection: false };
+
+    const lineIds = [id, ...members.map((row) => row.id)];
+    const metrics = groupMetrics(lineIds);
+    const uniqueCount = members.filter((row) => row.unique > 0).length;
+    const starCount = metrics.edges.filter((edge) => edge.value === 3).length;
+    const coreCovered = selectedCoreCoverage(id, selectedCores);
+    const absorbablePenalty = coreCovered >= 2 ? 0.42 : coreCovered ? 0.72 : 1;
+    const lineScore =
+      (metrics.quality * 180 +
+        metrics.edges.length * 80 +
+        starCount * 220 +
+        uniqueCount * 360 +
+        members.reduce((sum, row) => sum + row.value, 0) * 0.32) *
+      absorbablePenalty;
+
+    return {
+      members: members.map((row) => row.id),
+      score: lineScore,
+      protection: uniqueCount >= 2 && (starCount >= 2 || metrics.quality >= 5),
+    };
+  }
+
+  function coreIndependencePenalty(id, selectedCores, scope, line, targetCount) {
+    if (!selectedCores.length) return 0;
+
+    const coverage = selectedCoreCoverage(id, selectedCores);
+    if (coverage < 2) return 0;
+
+    const earlyCoreSlot = selectedCores.length < 3;
+    const requiredLineScore = earlyCoreSlot
+      ? coverage >= 3
+        ? 1300
+        : 1050
+      : coverage >= 3
+        ? 950
+        : 760;
+    const protectedLineScore = line.protection ? requiredLineScore * 0.78 : requiredLineScore;
+    const deficit = Math.max(0, protectedLineScore - line.score);
+    if (!deficit) return 0;
+
+    const pressure = targetCount <= 3 ? 1.15 : targetCount <= 4 ? 1 : 0.72;
+    const commandRelief = isCommandCoreType(id) ? 120 : 0;
+    return Math.max(0, (coverage * 190 + deficit * 0.82) * pressure - commandRelief);
+  }
+
+  function narrowCorePenalty(id, targetCount, line) {
+    if (isCommandCoreType(id)) return 0;
+    const base = targetCount <= 4 ? 720 : targetCount <= 6 ? 360 : 0;
+    if (!base) return 0;
+
+    const protectedLine = line.protection && line.members.length >= 3;
+    if (!protectedLine) return base;
+
+    const relief = Math.max(0, line.score - 1000) * 1.25 + 120;
+    return Math.max(0, base - Math.min(base, relief));
+  }
+
+  function selectRosterCores(ids, targetCount, fixedCoreIds = []) {
+    const scope = [...ids];
+    const selected = [...new Set(fixedCoreIds.filter((id) => scope.includes(id)))].slice(0, targetCount);
+    const candidates = scope
+      .map((id) => ({ id, info: tierInfo(id, scope) }))
+      .filter(
+        (row) =>
+          hasRosterRelation(row.id, scope) &&
+          (!row.info.support || row.info.core) &&
+          (row.info.rank >= TIER_ORDER.upper || row.info.reach.links >= 2),
+      )
+      .sort(
+        (a, b) =>
+          b.info.coreScore - a.info.coreScore ||
+          b.info.rank - a.info.rank ||
+          b.info.power - a.info.power ||
+          displayName(a.id).localeCompare(displayName(b.id), "ko"),
+      );
+
+    const limit = Math.min(targetCount, candidates.length);
+    while (selected.length < targetCount && selected.length < fixedCoreIds.length + limit) {
+      let best = null;
+      for (const row of candidates) {
+        if (selected.includes(row.id)) continue;
+        const spread = coreCoverageScore(row.id, selected, scope);
+        const line = candidateLineInfo(row.id, scope, selected);
+        const lineBonus = selected.length >= 3 ? line.score * 0.95 : 0;
+        const independencePenalty = coreIndependencePenalty(row.id, selected, scope, line, targetCount);
+        const narrowPenalty = narrowCorePenalty(row.id, targetCount, line);
+        const score = row.info.coreScore + spread + lineBonus - narrowPenalty - independencePenalty;
+        const candidate = { id: row.id, score };
+        if (!best || candidate.score > best.score) best = candidate;
+      }
+      if (!best) break;
+      selected.push(best.id);
+    }
+    return selected;
+  }
+
+  function seedProtectedCoreLines(groups, remaining, scope, maxSize) {
+    const cores = groups.map((group) => group[0]);
+    for (const group of groups) {
+      const core = group[0];
+      const otherCores = cores.filter((id) => id !== core);
+      const line = candidateLineInfo(core, scope, otherCores);
+      if (!line.protection) continue;
+
+      for (const id of line.members) {
+        if (group.length >= maxSize) break;
+        if (!remaining.has(id)) continue;
+        const relation = relationBetween(core, id);
+        const covered = selectedCoreCoverage(id, otherCores);
+        if (!relation || covered >= relation.value) continue;
+        group.push(id);
+        remaining.delete(id);
+      }
+    }
+  }
+
+  function candidatePhaseMatches(info, phase) {
+    if (phase === "key") return info.tier === "key" || info.tier === "core";
+    if (phase === "upper") return info.tier === "upper";
+    if (phase === "support") return info.support && info.rank <= TIER_ORDER.support;
+    return info.tier === "reserve";
+  }
+
+  function candidateSortValue(id, scope) {
+    const info = tierInfo(id, scope);
+    return info.rank * 10000 + info.power * 18 + info.reach.score + traitScore(id) * 80;
+  }
+
+  function rosterFitScore(id, group, scope) {
+    const relation = groupRelationSummary(id, group);
+    if (!relation.links) return null;
+
+    const info = tierInfo(id, scope);
+    const coreRelation = relationBetween(id, group[0])?.value || 0;
+    const supportBonus = info.support ? (group.some(hasSupportTrait) ? 30 : 180) : 0;
+    const roleBonus = roleComplementScore(id, group) * 0.16;
+    const directCoreBonus = coreRelation * 280;
+    const relationScore = relation.quality * 120 + relation.links * 58 + relation.star * 140;
+    const abilityScore = info.power * 0.22 + traitScore(id) * 8 + info.highStat * 0.9;
+    const sizeBonus = Math.max(0, 7 - group.length) * 12;
+
+    return {
+      score: relationScore + directCoreBonus + supportBonus + roleBonus + abilityScore + sizeBonus,
+      relation,
+      info,
+    };
+  }
+
+  function rosterFitThreshold(phase) {
+    if (phase === "key") return 210;
+    if (phase === "upper") return 185;
+    if (phase === "support") return 145;
+    return 260;
+  }
+
+  function canUseRosterFit(row, phase) {
+    if (!row) return false;
+    if (phase !== "reserve") return true;
+    return row.relation.links >= 2 || row.relation.star > 0 || row.relation.quality >= 3;
+  }
+
+  function bestRosterGroupFor(id, groups, scope, maxSize, phase) {
+    let best = null;
+    for (let index = 0; index < groups.length; index += 1) {
+      const group = groups[index];
+      if (group.length >= maxSize) continue;
+      const row = rosterFitScore(id, group, scope);
+      if (!canUseRosterFit(row, phase)) continue;
+      if (row.score < rosterFitThreshold(phase)) continue;
+      const candidate = { index, ...row };
+      if (!best || candidate.score > best.score) best = candidate;
+    }
+    return best;
+  }
+
+  function assignRosterPhase(groups, remaining, scope, maxSize, phase) {
+    const candidates = [...remaining]
+      .filter((id) => candidatePhaseMatches(tierInfo(id, scope), phase))
+      .sort((a, b) => candidateSortValue(b, scope) - candidateSortValue(a, scope));
+
+    for (const id of candidates) {
+      if (!remaining.has(id)) continue;
+      const target = bestRosterGroupFor(id, groups, scope, maxSize, phase);
+      if (!target) continue;
+      groups[target.index].push(id);
+      remaining.delete(id);
+    }
+  }
+
+  function packageMemberRows(seed, remaining, coreIds) {
+    return [...remaining]
+      .filter((id) => id !== seed)
+      .map((id) => {
+        const relation = relationBetween(seed, id);
+        if (!relation) return null;
+        const covered = selectedCoreCoverage(id, coreIds);
+        const unique = Math.max(0, relation.value - covered);
+        const info = tierInfo(id, [...remaining]);
+        const value =
+          relation.value * 210 +
+          unique * 250 +
+          (relation.value === 3 ? 260 : 0) +
+          (info.key ? 180 : info.upper ? 120 : info.support ? 70 : 35) +
+          fieldPower(id) * 0.12 -
+          (covered >= relation.value ? covered * 170 : 0);
+        return { id, relation, value };
+      })
+      .filter(Boolean)
+      .filter((row) => row.relation.value >= 2 || row.value >= 280)
+      .sort((a, b) => b.value - a.value || fieldPower(b.id) - fieldPower(a.id));
+  }
+
+  function smallLinePackage(seed, remaining, scope, coreIds) {
+    const members = packageMemberRows(seed, remaining, coreIds).slice(0, 2).map((row) => row.id);
+    if (!members.length) return null;
+
+    const ids = [seed, ...members];
+    const metrics = groupMetrics(ids);
+    if (!metrics.edges.length) return null;
+    const starCount = metrics.edges.filter((edge) => edge.value === 3).length;
+    const quality = metrics.quality;
+    const packageScore =
+      quality * 170 +
+      metrics.edges.length * 90 +
+      starCount * 230 +
+      ids.reduce((sum, id) => sum + fieldPower(id), 0) * 0.18;
+    if (packageScore < 520) return null;
+
+    return { ids, score: packageScore, quality, starCount };
+  }
+
+  function smallLinePackages(remaining, scope, coreIds) {
+    const bySignature = new Map();
+    for (const seed of remaining) {
+      const line = smallLinePackage(seed, remaining, scope, coreIds);
+      if (!line) continue;
+      const signature = [...line.ids].sort((a, b) => a - b).join("+");
+      const previous = bySignature.get(signature);
+      if (!previous || line.score > previous.score) bySignature.set(signature, line);
+    }
+    return [...bySignature.values()].sort((a, b) => b.score - a.score);
+  }
+
+  function packageGroupFit(line, group, scope) {
+    let links = 0;
+    let quality = 0;
+    let star = 0;
+
+    for (const id of line.ids) {
+      for (const other of group) {
+        const relation = relationBetween(id, other);
+        if (!relation) continue;
+        links += 1;
+        quality += relation.value;
+        if (relation.value === 3) star += 1;
+      }
+    }
+
+    if (!links) return null;
+
+    const roleValue = line.ids.reduce((sum, id) => sum + roleComplementScore(id, group) * 0.08, 0);
+    const score =
+      quality * 210 +
+      links * 75 +
+      star * 180 +
+      line.score * 0.55 +
+      roleValue +
+      line.ids.reduce((sum, id) => sum + fieldPower(id), 0) * 0.08;
+
+    return { score, links, quality, star };
+  }
+
+  function assignSmallLinePackages(groups, remaining, scope, maxSize) {
+    const coreIds = groups.map((group) => group[0]);
+
+    for (let pass = 0; pass < 6; pass += 1) {
+      let best = null;
+      const packages = smallLinePackages(remaining, scope, coreIds);
+      for (const line of packages) {
+        if (!line.ids.every((id) => remaining.has(id))) continue;
+
+        for (let index = 0; index < groups.length; index += 1) {
+          const group = groups[index];
+          if (group.length + line.ids.length > maxSize) continue;
+          const fit = packageGroupFit(line, group, scope);
+          if (!fit) continue;
+
+          const threshold = line.ids.length >= 3 ? 960 : 720;
+          if (fit.score < threshold) continue;
+          const row = { index, line, fit, score: fit.score + line.score * 0.25 };
+          if (!best || row.score > best.score) best = row;
+        }
+      }
+
+      if (!best) break;
+      for (const id of best.line.ids) {
+        groups[best.index].push(id);
+        remaining.delete(id);
+      }
+    }
+  }
+
+  function balanceCoreRosterGroups(initialGroups, scope, maxSize) {
+    const groups = initialGroups.map((group) => [...group]);
+
+    for (let pass = 0; pass < 8; pass += 1) {
+      let best = null;
+      for (let sourceIndex = 0; sourceIndex < groups.length; sourceIndex += 1) {
+        const source = groups[sourceIndex];
+        if (source.length <= 2) continue;
+
+        for (const id of source.slice(1)) {
+          const sourceWithoutId = source.filter((other) => other !== id);
+          const current = rosterFitScore(id, sourceWithoutId, scope);
+          if (!current) continue;
+
+          for (let targetIndex = 0; targetIndex < groups.length; targetIndex += 1) {
+            if (sourceIndex === targetIndex) continue;
+            const target = groups[targetIndex];
+            if (target.length >= maxSize) continue;
+
+            const targetFit = rosterFitScore(id, target, scope);
+            if (!canUseRosterFit(targetFit, "upper")) continue;
+            const sizeRelief = Math.max(0, source.length - target.length) * 28;
+            const delta = targetFit.score - current.score + sizeRelief;
+            if (delta < 180) continue;
+
+            const row = { id, sourceIndex, targetIndex, delta };
+            if (!best || row.delta > best.delta) best = row;
+          }
+        }
+      }
+
+      if (!best) break;
+      groups[best.sourceIndex] = groups[best.sourceIndex].filter((id) => id !== best.id);
+      groups[best.targetIndex].push(best.id);
+    }
+
+    return groups;
+  }
+
+  function cleanupCoreRosterPlan(groups, remaining, scope) {
+    const unassigned = new Set(remaining);
+    const cleanGroups = [];
+
+    for (const group of groups) {
+      const unique = [...new Set(group)];
+      if (unique.length < 2 || !groupMetrics(unique).edges.length) {
+        unique.forEach((id) => unassigned.add(id));
+      } else {
+        cleanGroups.push(unique);
+      }
+    }
+
+    return { groups: rankGroups(cleanGroups), unassigned: sortUnassigned([...unassigned]) };
+  }
+
+  function planRosterCoreFirst(ids, planOptions) {
+    const maxSize = planOptions.maxSize;
+    const targetCount =
+      planOptions.mode === "count"
+        ? clampInteger(planOptions.targetCount, 1, Math.max(1, ids.length), rosterLimitValues.groupCount)
+        : Math.max(1, Math.min(ids.length, minGroupCount(ids.length, maxSize)));
+    const cores = selectRosterCores(ids, targetCount, planOptions.fixedCoreIds || []);
+    const groups = cores.map((id) => [id]);
+    const remaining = new Set(ids.filter((id) => !cores.includes(id)));
+
+    seedProtectedCoreLines(groups, remaining, ids, maxSize);
+    for (const phase of ["key", "upper", "support"]) {
+      assignRosterPhase(groups, remaining, ids, maxSize, phase);
+    }
+
+    assignSmallLinePackages(groups, remaining, ids, maxSize);
+    assignRosterPhase(groups, remaining, ids, maxSize, "reserve");
+    assignSmallLinePackages(groups, remaining, ids, maxSize);
+    const balanced = balanceCoreRosterGroups(groups, ids, maxSize);
+    return cleanupCoreRosterPlan(balanced, remaining, ids);
   }
 
   function partitionRoster(ids, maxSize) {
     const remaining = new Set(ids);
     const groups = [];
+    const unassigned = [];
 
     for (const component of starComponents(ids)) {
       if (!component.every((id) => remaining.has(id))) continue;
@@ -597,10 +1206,11 @@
       const group = [seed];
       remaining.delete(seed);
       fillGroup(group, remaining, maxSize, 120);
-      groups.push(group);
+      if (group.length > 1 || hasRosterRelation(seed, ids)) groups.push(group);
+      else unassigned.push(seed);
     }
 
-    return rankGroups(groups);
+    return { groups: rankGroups(groups), unassigned: sortUnassigned(unassigned) };
   }
 
   function normalizePlanOptions(options) {
@@ -609,15 +1219,7 @@
 
   function planRoster(ids, options) {
     const planOptions = normalizePlanOptions(options);
-    const maxSize = planOptions.maxSize;
-    const initialGroups = partitionRoster(ids, maxSize);
-    const plan = rebalanceGroups(initialGroups, maxSize);
-
-    if (planOptions.mode !== "count") return plan;
-
-    const min = minGroupCount(ids.length, maxSize);
-    const targetCount = clampInteger(planOptions.targetCount, min, ids.length, min);
-    return fitGroupCount(plan.groups, targetCount, maxSize);
+    return planRosterCoreFirst(ids, planOptions);
   }
 
   function rebalanceGroups(initialGroups, maxSize) {
@@ -648,6 +1250,319 @@
     }
 
     return { groups };
+  }
+
+  function rebalanceBridgeDistribution(initialGroups, maxSize) {
+    let groups = rankGroups(initialGroups);
+    let openMoveApplied = false;
+
+    for (let pass = 0; pass < 20; pass += 1) {
+      const allowOpenMove = !openMoveApplied || hasOversizedGroup(groups, maxSize);
+      const candidate = (allowOpenMove ? findBestOpenBridgeMove(groups, maxSize) : null) || findBestBridgeSwap(groups, maxSize);
+      if (!candidate || candidate.adjustedDelta < 80) break;
+      if (candidate.kind === "open" && !hasOversizedGroup(candidate.groups, maxSize)) openMoveApplied = true;
+      groups = rankGroups(candidate.groups);
+    }
+
+    return groups;
+  }
+
+  function softGroupLimit(groups, maxSize) {
+    const total = groups.reduce((sum, group) => sum + group.length, 0);
+    const average = total / Math.max(1, groups.length);
+    return Math.min(maxSize, Math.max(6, Math.ceil(average * 1.55)));
+  }
+
+  function hasOversizedGroup(groups, maxSize) {
+    const limit = softGroupLimit(groups, maxSize);
+    return groups.some((group) => group.length > limit);
+  }
+
+  function groupRelationSummary(id, group) {
+    let links = 0;
+    let quality = 0;
+    let star = 0;
+    for (const other of group) {
+      if (other === id) continue;
+      const relation = relationBetween(id, other);
+      if (!relation) continue;
+      links += 1;
+      quality += relation.value;
+      if (relation.value === 3) star += 1;
+    }
+    return { links, quality, star };
+  }
+
+  function internalAnchorScore(id, group) {
+    const relation = groupRelationSummary(id, group);
+    return relation.links * 110 + relation.quality * 38 + relation.star * 70 + primary(id) * 0.08;
+  }
+
+  function isPrimaryGroupAnchor(id, group) {
+    if (group.length < 5) return false;
+    const [first] = [...group].sort((a, b) => internalAnchorScore(b, group) - internalAnchorScore(a, group));
+    return first === id;
+  }
+
+  function isBridgeTarget(source, target, targetRelation, maxSize) {
+    if (!targetRelation.links) return false;
+    const targetIsSmall = target.length <= Math.ceil(maxSize * 0.45);
+    const sourceIsCrowded = source.length >= maxSize;
+    const sourceIsMuchLarger = source.length - target.length >= 4;
+    const sourceIsOversized = source.length > softGroupLimit([source, target], maxSize);
+    const directCoreLink = targetRelation.star > 0 || targetRelation.quality >= 2;
+    const weakOverflowLink = source.length >= target.length + 7 && targetRelation.quality >= 1;
+    const hasSolidBridge = targetRelation.quality >= 4 || (targetRelation.links >= 2 && targetRelation.quality >= 3);
+    if (targetIsSmall && weakOverflowLink) return true;
+    if (sourceIsOversized && targetIsSmall && directCoreLink) return true;
+    return hasSolidBridge && (targetIsSmall || sourceIsCrowded || sourceIsMuchLarger);
+  }
+
+  function bridgeMovePreference(id, source, target, maxSize) {
+    const sourceRelation = groupRelationSummary(id, source.filter((other) => other !== id));
+    const targetRelation = groupRelationSummary(id, target);
+    const sizeRelief = Math.max(0, source.length - target.length) * 35;
+    const crowdedRelief = source.length >= maxSize ? 90 : source.length >= maxSize - 1 ? 45 : 0;
+    const targetNeed = target.length <= Math.ceil(maxSize * 0.45) ? 120 : target.length <= Math.ceil(maxSize * 0.65) ? 70 : 0;
+    const bridgeValue = targetRelation.quality * 85 + targetRelation.links * 55 + targetRelation.star * 90;
+    const splitCoreRelief = sourceRelation.links >= 4 && targetRelation.links >= 2 ? 120 : 0;
+    return bridgeValue + sizeRelief + crowdedRelief + targetNeed + splitCoreRelief - sourceRelation.quality * 18;
+  }
+
+  function findBestOpenBridgeMove(groups, maxSize) {
+    const baseScore = totalScore(groups);
+    let best = null;
+
+    for (let sourceIndex = 0; sourceIndex < groups.length; sourceIndex += 1) {
+      const source = groups[sourceIndex];
+      if (source.length <= 3) continue;
+
+      for (let targetIndex = 0; targetIndex < groups.length; targetIndex += 1) {
+        if (sourceIndex === targetIndex) continue;
+        const target = groups[targetIndex];
+        if (target.length >= maxSize) continue;
+        if (source.length < target.length + 3 && source.length < maxSize) continue;
+
+        for (const id of source) {
+          if (isPrimaryGroupAnchor(id, source)) continue;
+          const targetRelation = groupRelationSummary(id, target);
+          if (!isBridgeTarget(source, target, targetRelation, maxSize)) continue;
+
+          const nextGroups = groups.map((group, index) => {
+            if (index === sourceIndex) return group.filter((other) => other !== id);
+            if (index === targetIndex) return [...group, id];
+            return [...group];
+          });
+          const scoreDelta = totalScore(nextGroups) - baseScore;
+          if (scoreDelta < -360) continue;
+
+          const adjustedDelta = scoreDelta + bridgeMovePreference(id, source, target, maxSize);
+          if (adjustedDelta < 80) continue;
+          const row = { kind: "open", groups: nextGroups, adjustedDelta };
+          if (!best || row.adjustedDelta > best.adjustedDelta) best = row;
+        }
+      }
+    }
+
+    return best;
+  }
+
+  function bridgeSwapPreference(id, source, target, ejected, maxSize) {
+    const sourceWithoutId = source.filter((other) => other !== id);
+    const targetWithoutEjected = target.filter((other) => other !== ejected);
+    const idTarget = groupRelationSummary(id, targetWithoutEjected);
+    const idSource = groupRelationSummary(id, sourceWithoutId);
+    const ejectedSource = groupRelationSummary(ejected, sourceWithoutId);
+    const ejectedTarget = groupRelationSummary(ejected, targetWithoutEjected);
+    const sourceCrowding = source.length >= maxSize - 1 ? 70 : 0;
+    return (
+      idTarget.quality * 80 +
+      idTarget.links * 50 +
+      idTarget.star * 80 +
+      ejectedSource.quality * 70 +
+      ejectedSource.links * 35 +
+      sourceCrowding -
+      idSource.quality * 16 -
+      ejectedTarget.quality * 12
+    );
+  }
+
+  function findBestBridgeSwap(groups, maxSize) {
+    const baseScore = totalScore(groups);
+    let best = null;
+
+    for (let sourceIndex = 0; sourceIndex < groups.length; sourceIndex += 1) {
+      const source = groups[sourceIndex];
+      if (source.length <= 3) continue;
+
+      for (let targetIndex = 0; targetIndex < groups.length; targetIndex += 1) {
+        if (sourceIndex === targetIndex) continue;
+        const target = groups[targetIndex];
+        if (target.length < maxSize) continue;
+        if (source.length < target.length - 1) continue;
+
+        for (const id of source) {
+          if (isPrimaryGroupAnchor(id, source)) continue;
+          const targetRelation = groupRelationSummary(id, target);
+          if (targetRelation.links < 2 || targetRelation.quality < 4) continue;
+
+          for (const ejected of target) {
+            if (isPrimaryGroupAnchor(ejected, target)) continue;
+            const sourceWithoutId = source.filter((other) => other !== id);
+            const targetWithoutEjected = target.filter((other) => other !== ejected);
+            const ejectedRelation = groupRelationSummary(ejected, sourceWithoutId);
+            if (!ejectedRelation.links) continue;
+
+            const nextGroups = groups.map((group, index) => {
+              if (index === sourceIndex) return sourceWithoutId.concat(ejected);
+              if (index === targetIndex) return targetWithoutEjected.concat(id);
+              return [...group];
+            });
+            const scoreDelta = totalScore(nextGroups) - baseScore;
+            if (scoreDelta < -360) continue;
+
+            const adjustedDelta = scoreDelta + bridgeSwapPreference(id, source, target, ejected, maxSize);
+            if (adjustedDelta < 80) continue;
+            const row = { kind: "swap", groups: nextGroups, adjustedDelta };
+            if (!best || row.adjustedDelta > best.adjustedDelta) best = row;
+          }
+        }
+      }
+    }
+
+    return best;
+  }
+
+  function rebalanceDirectFollowers(initialGroups, maxSize, initialUnassigned = []) {
+    let groups = rankGroups(initialGroups);
+    let unassigned = sortUnassigned(initialUnassigned);
+    let replacementApplied = false;
+
+    for (let pass = 0; pass < 14; pass += 1) {
+      const candidate = findBestDirectFollowerMove(groups, maxSize, !replacementApplied);
+      if (!candidate || candidate.adjustedDelta < 120) break;
+      if (candidate.kind === "replace") replacementApplied = true;
+      groups = rankGroups(candidate.groups);
+      if (candidate.unassigned?.length) {
+        unassigned = sortUnassigned([...new Set(unassigned.concat(candidate.unassigned))]);
+      }
+    }
+
+    return { groups, unassigned };
+  }
+
+  function followerMovePreference(id, source, target, currentRelation, targetRelation) {
+    const sourceRelief = Math.max(0, source.length - target.length) * 35;
+    const orphanRelief = currentRelation.links ? 0 : 440;
+    const directValue = targetRelation.quality * 115 + targetRelation.links * 42 + targetRelation.star * 95;
+    const coreValue = targetCoreRelationBonus(id, target);
+    const currentPenalty = currentRelation.quality * 24 + currentRelation.links * 18;
+    return sourceRelief + orphanRelief + directValue + coreValue - currentPenalty + fieldPower(id) * 0.03;
+  }
+
+  function targetCoreRelationBonus(id, group) {
+    return [...group]
+      .sort((a, b) => internalAnchorScore(b, group) - internalAnchorScore(a, group))
+      .slice(0, Math.min(2, group.length))
+      .reduce((sum, core) => sum + (relationBetween(id, core)?.value || 0) * 260, 0);
+  }
+
+  function bestRelatedAnchorScore(id, group) {
+    let best = 0;
+    for (const other of group) {
+      if (other === id) continue;
+      const relation = relationBetween(id, other);
+      if (!relation) continue;
+      const score = relation.value * 220 + affinityReach(other).score * 0.45 + fieldPower(other) * 0.25;
+      if (score > best) best = score;
+    }
+    return best;
+  }
+
+  function findBestDirectFollowerMove(groups, maxSize, allowReplacement = true) {
+    const baseScore = totalScore(groups);
+    let best = null;
+
+    for (let sourceIndex = 0; sourceIndex < groups.length; sourceIndex += 1) {
+      const source = groups[sourceIndex];
+      if (source.length <= 3) continue;
+
+      for (const id of source) {
+        if (isPrimaryGroupAnchor(id, source)) continue;
+        const sourceWithoutId = source.filter((other) => other !== id);
+        const currentRelation = groupRelationSummary(id, sourceWithoutId);
+
+        for (let targetIndex = 0; targetIndex < groups.length; targetIndex += 1) {
+          if (sourceIndex === targetIndex) continue;
+          const target = groups[targetIndex];
+          const targetRelation = groupRelationSummary(id, target);
+          if (!targetRelation.links) continue;
+
+          const sourceMuchLarger = source.length >= target.length + 4;
+          const targetAnchorScore = bestRelatedAnchorScore(id, target);
+          const sourceAnchorScore = bestRelatedAnchorScore(id, sourceWithoutId);
+          const shouldFollow =
+            currentRelation.links === 0 ||
+            (sourceMuchLarger && targetRelation.quality >= 2 && targetAnchorScore > sourceAnchorScore + 120);
+          if (!shouldFollow) continue;
+
+          if (target.length < maxSize) {
+            const nextGroups = groups.map((group, index) => {
+              if (index === sourceIndex) return sourceWithoutId;
+              if (index === targetIndex) return [...group, id];
+              return [...group];
+            });
+            const scoreDelta = totalScore(nextGroups) - baseScore;
+            if (scoreDelta < -420) continue;
+            const adjustedDelta = scoreDelta + followerMovePreference(id, source, target, currentRelation, targetRelation);
+            const row = { kind: "open", groups: nextGroups, adjustedDelta };
+            if (!best || row.adjustedDelta > best.adjustedDelta) best = row;
+            continue;
+          }
+
+          if (!allowReplacement) continue;
+          if (currentRelation.links) continue;
+          const replacement = findBestFollowerReplacement(id, source, target, currentRelation, targetRelation);
+          if (!replacement) continue;
+          const nextGroups = groups.map((group, index) => {
+            if (index === sourceIndex) return sourceWithoutId;
+            if (index === targetIndex) return target.filter((other) => other !== replacement.id).concat(id);
+            return [...group];
+          });
+          const scoreDelta = totalScore(nextGroups) - baseScore;
+          if (scoreDelta < -520) continue;
+          const adjustedDelta =
+            scoreDelta +
+            followerMovePreference(id, source, target, currentRelation, targetRelation) +
+            replacement.preference;
+          const row = { kind: "replace", groups: nextGroups, adjustedDelta, unassigned: [replacement.id] };
+          if (!best || row.adjustedDelta > best.adjustedDelta) best = row;
+        }
+      }
+    }
+
+    return best;
+  }
+
+  function findBestFollowerReplacement(id, source, target, currentRelation, targetRelation) {
+    if (currentRelation.links && targetRelation.quality < 2) return null;
+
+    let best = null;
+    for (const ejected of target) {
+      if (isPrimaryGroupAnchor(ejected, target)) continue;
+      const targetWithoutEjected = target.filter((other) => other !== ejected);
+      const ejectedStay = internalAnchorScore(ejected, targetWithoutEjected);
+      const incomingStay = internalAnchorScore(id, targetWithoutEjected);
+      if (incomingStay + 80 < ejectedStay) continue;
+
+      const preference =
+        (incomingStay - ejectedStay) * 0.45 +
+        (fieldPower(id) - fieldPower(ejected)) * 0.08 -
+        groupRelationSummary(ejected, source).quality * 12;
+      const row = { id: ejected, preference };
+      if (!best || row.preference > best.preference) best = row;
+    }
+    return best;
   }
 
   function countShapePenalty(groups, maxSize) {
@@ -748,7 +1663,8 @@
         for (const split of combinations(group, count)) {
           const splitSet = new Set(split);
           const rest = group.filter((id) => !splitSet.has(id));
-          if (!rest.length) continue;
+          if (split.length < 2 || rest.length < 2) continue;
+          if (!groupMetrics(split).edges.length || !groupMetrics(rest).edges.length) continue;
 
           const nextGroups = groups
             .map((row, index) => (index === groupIndex ? rest : [...row]))
@@ -1011,165 +1927,549 @@
     return groups.reduce((sum, group) => sum + groupMetrics(group).score, 0);
   }
 
-  function formationStats(groups, baseSmallIds = new Set()) {
-    const groupById = new Map();
-    groups.forEach((group, index) => {
-      for (const id of group) groupById.set(id, index);
-    });
-    const smallGroups = groups.filter((group) => group.length <= 3);
-    let absorbedBaseSmall = 0;
-    for (const id of baseSmallIds) {
-      const index = groupById.get(id);
-      if (index !== undefined && groups[index].length > 3) absorbedBaseSmall += 1;
-    }
+  function formationStats(groups, unassigned = []) {
     return {
       groupCount: groups.length,
-      smallCount: smallGroups.length,
+      smallCount: groups.filter((group) => group.length <= 3).length,
       singleCount: groups.filter((group) => group.length === 1).length,
-      absorbedBaseSmall,
+      unassignedCount: unassigned.length,
     };
   }
 
-  function recommendOathSets(ids, planOptions, basePlan, limit = 3) {
-    const baseGroups = basePlan.groups;
-    const baseScore = totalScore(baseGroups);
-    const baseSmallIds = new Set(baseGroups.filter((group) => group.length <= 3).flat());
-    const baseClusterSmallIds = new Set(baseGroups.filter((group) => group.length >= 2 && group.length <= 3).flat());
-    if (!baseSmallIds.size) return [];
+  function isStrongUnassignedCandidate(id, scope) {
+    const info = tierInfo(id, scope);
+    return info.key || info.power >= 250 || info.highStat >= 85 || traitScore(id) >= 12;
+  }
 
-    const baseStats = formationStats(baseGroups, baseSmallIds);
-    const candidates = generateOathCandidates(ids, baseGroups, baseSmallIds, baseClusterSmallIds, baseGroups[0]?.[0]);
+  function lineIdsForDisplay(ids) {
+    const metrics = groupMetrics(ids);
+    return [...ids].sort(
+      (a, b) => (metrics.buff.get(b) || 0) - (metrics.buff.get(a) || 0) || fieldPower(b) - fieldPower(a),
+    );
+  }
+
+  function sectionMemberIds(section) {
+    if (section.ids) return section.ids;
+    const ids = [];
+    for (const line of section.lines || []) {
+      for (const id of line.ids) {
+        if (!ids.includes(id)) ids.push(id);
+      }
+    }
+    return ids;
+  }
+
+  function classifyUnassigned(ids, groups = [], scope = null) {
+    if (!ids.length) return [];
+
+    const scopeIds = scope || [...new Set(groups.flat().concat(ids))];
+    const coreIds = groups.map((group) => group[0]).filter(Boolean);
+    const remaining = new Set(ids);
+    const sections = [];
+
+    const lineRows = [];
+    for (const line of smallLinePackages(remaining, scopeIds, coreIds)) {
+      const lineIds = lineIdsForDisplay(line.ids.filter((id) => remaining.has(id)));
+      if (lineIds.length < 2 || lineIds.some((id) => !remaining.has(id))) continue;
+      lineRows.push({ ...line, ids: lineIds });
+      for (const id of lineIds) remaining.delete(id);
+    }
+    if (lineRows.length) {
+      sections.push({ key: "line", title: "후보 라인", lines: lineRows });
+    }
+
+    const strong = sortUnassigned([...remaining].filter((id) => isStrongUnassignedCandidate(id, scopeIds)));
+    for (const id of strong) remaining.delete(id);
+    if (strong.length) {
+      sections.push({ key: "strong", title: "강력 단독", ids: strong });
+    }
+
+    const support = sortUnassigned([...remaining].filter(hasSupportTrait));
+    for (const id of support) remaining.delete(id);
+    if (support.length) {
+      sections.push({ key: "support", title: "보조 후보", ids: support });
+    }
+
+    const general = sortUnassigned([...remaining]);
+    if (general.length) {
+      sections.push({ key: "general", title: "일반 미편성", ids: general });
+    }
+
+    return sections;
+  }
+
+  function classifiedUnassignedSources(ids, groups, unassigned) {
+    const sections = classifyUnassigned(unassigned, groups, ids);
+    const byKey = new Map(sections.map((section) => [section.key, section]));
+    const lineSources = (byKey.get("line")?.lines || []).map((line, index) => ({
+      index: -1,
+      group: line.ids,
+      size: line.ids.length,
+      lineScore: line.score,
+      sourceClass: "후보 라인",
+      sourceRank: 0,
+      lineIndex: index,
+    }));
+
+    return {
+      sections,
+      lineSources,
+      strongIds: byKey.get("strong")?.ids || [],
+      supportIds: byKey.get("support")?.ids || [],
+      generalIds: byKey.get("general")?.ids || [],
+    };
+  }
+
+  function roleGeneralThreshold(key) {
+    if (key === "field") return 175;
+    if (key === "advisor") return 165;
+    return 150;
+  }
+
+  function roleSourceCandidates(classified, need) {
     const rows = [];
     const seen = new Set();
 
-    function addEvaluation(oaths) {
-      const signature = oathSetSignature(oaths);
-      if (seen.has(signature)) return;
-      seen.add(signature);
-      const row = evaluateOathRecommendation(oaths, ids, planOptions, basePlan, baseScore, baseStats, baseSmallIds);
-      if (row) rows.push(row);
-    }
-
-    for (const candidate of candidates.slice(0, 70)) addEvaluation([candidate.triple]);
-
-    const pairPool = candidates.slice(0, 44);
-    for (let i = 0; i < pairPool.length; i += 1) {
-      for (let j = i + 1; j < pairPool.length; j += 1) {
-        if (oathsOverlap([pairPool[i].triple, pairPool[j].triple])) continue;
-        addEvaluation([pairPool[i].triple, pairPool[j].triple]);
+    function add(ids, sourceRank, sourceClass, threshold = 0) {
+      for (const id of ids) {
+        if (seen.has(id) || !need.matches(id) || roleNeedScore(id, need.key) < threshold) continue;
+        seen.add(id);
+        rows.push({ id, sourceRank, sourceClass });
       }
     }
 
-    const triplePool = candidates.slice(0, 28);
-    for (let i = 0; i < triplePool.length; i += 1) {
-      for (let j = i + 1; j < triplePool.length; j += 1) {
-        for (let k = j + 1; k < triplePool.length; k += 1) {
-          const oaths = [triplePool[i].triple, triplePool[j].triple, triplePool[k].triple];
-          if (oathsOverlap(oaths)) continue;
-          addEvaluation(oaths);
+    add(classified.strongIds, 0, "강력 단독");
+    add(classified.supportIds, 1, "보조 후보");
+    add(classified.generalIds, 3, "일반 미편성", roleGeneralThreshold(need.key));
+
+    return rows.sort(
+      (a, b) =>
+        a.sourceRank - b.sourceRank ||
+        roleNeedScore(b.id, need.key) - roleNeedScore(a.id, need.key) ||
+        fieldPower(b.id) - fieldPower(a.id),
+    );
+  }
+
+  function recommendOathSets(ids, planOptions, basePlan, limit = RECOMMENDATION_LIMIT) {
+    const candidates = dedupeAdjustmentCandidates(generateAdjustmentCandidates(ids, basePlan.groups, basePlan.unassigned || []));
+    const rows = [];
+    const seen = new Set();
+
+    for (const spec of candidates.slice(0, 42)) {
+      const signature = recommendationSignature(spec.kind, spec.ids, spec.targetIndex);
+      if (seen.has(signature)) continue;
+      seen.add(signature);
+      const row = hydrateRecommendation(spec, ids, planOptions, basePlan);
+      if (row.stats.unassignedCount <= row.baseStats.unassignedCount) rows.push(row);
+    }
+
+    return rows.sort(compareRecommendationRows).slice(0, limit);
+  }
+
+  function generateAdjustmentCandidates(ids, groups, unassigned = []) {
+    const groupIndex = groupIndexMap(groups);
+    for (const id of unassigned) groupIndex.set(id, -1);
+    const infos = groups.map((group, index) => ({ index, group, size: group.length }));
+    const rows = [];
+    const targetInfos = infos.filter((info) => info.size >= 2);
+    const classified = classifiedUnassignedSources(ids, groups, unassigned);
+    const smallLines = infos
+      .filter((info) => info.size >= 2 && info.size <= 3)
+      .map((info) => ({ ...info, sourceClass: "소규모 라인", sourceRank: 0 }));
+    const lineSources = [...classified.lineSources, ...smallLines];
+
+    for (const source of lineSources) {
+      for (const target of targetInfos.filter((info) => info.index !== source.index)) {
+        addBridgeCandidates(rows, {
+          kind: "oath",
+          priority: 1,
+          priorityLabel: "소규모 라인 병합",
+          source,
+          target,
+          sourceRank: source.sourceRank,
+          sourceClass: source.sourceClass,
+          reason:
+            source.index < 0
+              ? "미편성 후보 라인을 기존 집단의 넓은 친애 앵커와 연결합니다."
+              : "이미 형성된 소규모 라인을 다른 집단의 넓은 친애 앵커와 연결합니다.",
+        });
+      }
+    }
+
+    for (const singleId of classified.strongIds.slice(0, 12)) {
+      for (const target of targetInfos) {
+        for (const anchor of groupAnchors(target.group, 4)) {
+          pushAdjustmentCandidate(rows, {
+            kind: "oath",
+            priority: 2,
+            priorityLabel: "강력 단독 투입",
+            ids: [singleId, anchor],
+            anchorId: anchor,
+            sourceIds: [singleId],
+            targetIndex: target.index,
+            sourceRank: 0,
+            sourceClass: "강력 단독",
+            reason: `${displayName(singleId)} 장수를 기존 집단 코어와 연결해 미편성에서 구제합니다.`,
+          });
         }
       }
     }
 
-    return rows
+    for (const target of smallLines) {
+      for (const pair of combinations(classified.strongIds, 2).slice(0, 36)) {
+        for (const anchor of groupAnchors(target.group, 3)) {
+          pushAdjustmentCandidate(rows, {
+            kind: "oath",
+            priority: 2,
+            priorityLabel: "강력 단독 투입",
+            ids: [anchor, ...pair],
+            anchorId: anchor,
+            sourceIds: pair,
+            targetIndex: target.index,
+            sourceRank: 1,
+            sourceClass: "강력 단독",
+            reason: "작은 라인에 남는 단독 장수 둘을 연결해 별도 축으로 키웁니다.",
+          });
+        }
+      }
+    }
+
+    for (const target of infos) {
+      for (const need of missingRoleNeeds(target.group)) {
+        const sources = roleSourceCandidates(classified, need).filter((row) => groupIndex.get(row.id) !== target.index).slice(0, 8);
+        for (const source of sources) {
+          for (const anchor of groupAnchors(target.group, 3)) {
+            pushAdjustmentCandidate(rows, {
+              kind: "oath",
+              priority: 3,
+              priorityLabel: "역할 부족 보정",
+              ids: [source.id, anchor],
+              anchorId: anchor,
+              sourceIds: [source.id],
+              targetIndex: target.index,
+              needKey: need.key,
+              sourceRank: source.sourceRank,
+              sourceClass: source.sourceClass,
+              reason: `${need.label} 역할이 약한 집단에 ${displayName(source.id)} 장수를 연결합니다.`,
+            });
+          }
+        }
+      }
+    }
+
+    for (const spec of rows.filter((row) => row.kind === "oath")) addMarriageCandidatesFromSpec(rows, spec, groups, groupIndex);
+    addSupportMarriageCandidates(rows, ids, groups, groupIndex, classified.supportIds);
+    return rows.sort(compareAdjustmentSpecs);
+  }
+
+  function groupIndexMap(groups) {
+    const map = new Map();
+    groups.forEach((group, index) => {
+      for (const id of group) map.set(id, index);
+    });
+    return map;
+  }
+
+  function groupAnchors(group, limit = 4) {
+    return [...group]
       .sort(
         (a, b) =>
-          b.impact - a.impact ||
-          b.scoreDelta - a.scoreDelta ||
-          a.plan.groups.length - b.plan.groups.length ||
-          b.oaths.length - a.oaths.length,
+          affinityReach(b).score - affinityReach(a).score ||
+          affinityReach(b, group).score - affinityReach(a, group).score ||
+          fieldPower(b) - fieldPower(a),
       )
       .slice(0, limit);
   }
 
-  function generateOathCandidates(ids, groups, baseSmallIds, baseClusterSmallIds, mainAnchor) {
-    const groupIndex = new Map();
-    groups.forEach((group, index) => {
-      for (const id of group) groupIndex.set(id, index);
-    });
+  function addBridgeCandidates(rows, { kind, priority, priorityLabel, source, target, reason, sourceRank = 0, sourceClass = "" }) {
+    const sourceAnchors = [...source.group]
+      .sort((a, b) => fieldPower(b) - fieldPower(a) || affinityReach(b).score - affinityReach(a).score)
+      .slice(0, 2);
 
-    return combinations3(ids)
-      .map((triple) => {
-        const smallCount = triple.filter((id) => baseSmallIds.has(id)).length;
-        if (!smallCount) return null;
-        if (!triple.some((id) => baseClusterSmallIds.has(id))) return null;
-        const largeCount = triple.filter((id) => (groups[groupIndex.get(id)]?.length || 0) > 3).length;
-        if (!largeCount) return null;
-
-        const distinctGroups = new Set(triple.map((id) => groupIndex.get(id))).size;
-        if (distinctGroups < 2) return null;
-
-        const existing = [
-          relationBetween(triple[0], triple[1]),
-          relationBetween(triple[0], triple[2]),
-          relationBetween(triple[1], triple[2]),
-        ].filter(Boolean).length;
-        const singleCount = triple.filter((id) => groups[groupIndex.get(id)]?.length === 1).length;
-        const power = triple.reduce((sum, id) => sum + primary(id), 0);
-        const heuristic =
-          smallCount * 140 +
-          singleCount * 45 +
-          distinctGroups * 75 +
-          (3 - existing) * 35 +
-          existing * 12 +
-          (triple.includes(mainAnchor) ? 160 : 0) +
-          power * 0.04;
-
-        return { triple, heuristic };
-      })
-      .filter(Boolean)
-      .sort((a, b) => b.heuristic - a.heuristic);
-  }
-
-  function evaluateOathRecommendation(oaths, ids, planOptions, basePlan, baseScore, baseStats, baseSmallIds) {
-    return withVirtualOaths(oaths, () => {
-      const plan = planRoster(ids, planOptions);
-      const score = totalScore(plan.groups);
-      const scoreDelta = score - baseScore;
-      if (scoreDelta <= 0) return null;
-
-      const stats = formationStats(plan.groups, baseSmallIds);
-      const mainAnchor = basePlan.groups[0]?.[0];
-      const baseMainSize = basePlan.groups[0]?.length || 0;
-      const mainGroup = plan.groups.find((group) => group.includes(mainAnchor)) || [];
-      const cleanDelta =
-        (baseStats.singleCount - stats.singleCount) * 140 +
-        (baseStats.smallCount - stats.smallCount) * 90 +
-        (baseStats.groupCount - stats.groupCount) * 70 +
-        (stats.absorbedBaseSmall - baseStats.absorbedBaseSmall) * 55 +
-        (mainGroup.length - baseMainSize) * 300;
-      const impact = scoreDelta + cleanDelta;
-      if (impact <= 0) return null;
-
-      return {
-        oaths,
-        plan,
-        score,
-        scoreDelta,
-        cleanDelta,
-        impact,
-        stats,
-      };
-    });
-  }
-
-  function oathsOverlap(oaths) {
-    const seen = new Set();
-    for (const oath of oaths) {
-      for (const id of oath) {
-        if (seen.has(id)) return true;
-        seen.add(id);
+    for (const sourceAnchor of sourceAnchors) {
+      for (const targetAnchor of groupAnchors(target.group, 4)) {
+        const base = [sourceAnchor, targetAnchor];
+        const extra = bestThirdMember([...source.group, ...target.group], base, target.group);
+        pushAdjustmentCandidate(rows, {
+          kind,
+          priority,
+          priorityLabel,
+          ids: extra ? [...base, extra] : base,
+          anchorId: targetAnchor,
+          sourceIds: source.group,
+          targetIndex: target.index,
+          sourceRank,
+          sourceClass,
+          reason,
+        });
       }
     }
-    return false;
   }
 
-  function oathSignature(oath) {
-    return [...oath].sort((a, b) => a - b).join("+");
+  function bestThirdMember(pool, baseIds, targetGroup) {
+    return [...new Set(pool)]
+      .filter((id) => !baseIds.includes(id))
+      .sort(
+        (a, b) =>
+          roleComplementScore(b, targetGroup) - roleComplementScore(a, targetGroup) ||
+          fieldPower(b) - fieldPower(a) ||
+          affinityReach(b).score - affinityReach(a).score,
+      )
+      .find((id) => !hasStarPair([...baseIds, id]));
   }
 
-  function oathSetSignature(oaths) {
-    return oaths.map(oathSignature).sort().join("|");
+  function roleComplementScore(id, group) {
+    const needs = missingRoleNeeds(group);
+    if (!needs.length) return fieldPower(id) * 0.1;
+    return needs.reduce((sum, need) => sum + (need.matches(id) ? roleNeedScore(id, need.key) : 0), 0);
+  }
+
+  function missingRoleNeeds(group) {
+    const tags = new Set(group.flatMap(roleTags));
+    const needs = [];
+    if (!(tags.has("전투") || tags.has("지휘"))) {
+      needs.push({
+        key: "field",
+        label: "전투/지휘",
+        matches: (id) => roleTags(id).some((tag) => tag === "전투" || tag === "지휘"),
+      });
+    }
+    if (!tags.has("참모")) {
+      needs.push({
+        key: "advisor",
+        label: "참모",
+        matches: (id) => roleTags(id).includes("참모"),
+      });
+    }
+    if (group.length >= 6 && !tags.has("실무")) {
+      needs.push({
+        key: "admin",
+        label: "실무",
+        matches: (id) => roleTags(id).includes("실무"),
+      });
+    }
+    return needs;
+  }
+
+  function roleNeedScore(id, key) {
+    const stats = officer(id)?.stats || {};
+    if (key === "advisor") return (stats.intelligence || 0) * 1.4 + (stats.politics || 0) * 0.7 + fieldPower(id) * 0.1;
+    if (key === "admin") return (stats.politics || 0) * 1.3 + (stats.intelligence || 0) * 0.4 + fieldPower(id) * 0.1;
+    return (stats.leadership || 0) * 1.2 + Math.max(stats.war || 0, stats.intelligence || 0) + fieldPower(id) * 0.1;
+  }
+
+  function addMarriageCandidatesFromSpec(rows, spec, groups, groupIndex) {
+    if (spec.priority > 3) return;
+    for (let i = 0; i < spec.ids.length; i += 1) {
+      for (let j = i + 1; j < spec.ids.length; j += 1) {
+        const a = spec.ids[i];
+        const b = spec.ids[j];
+        if (!isMarriagePair(a, b)) continue;
+        if (groupIndex.get(a) === groupIndex.get(b)) continue;
+        const female = isFemale(a) ? a : b;
+        const other = female === a ? b : a;
+        const femaleGroupIndex = groupIndex.get(female);
+        const otherGroupIndex = groupIndex.get(other);
+        const targetIndex = groups[femaleGroupIndex]?.length >= 2 ? femaleGroupIndex : otherGroupIndex;
+        if (targetIndex < 0 || !groups[targetIndex]) continue;
+        pushAdjustmentCandidate(rows, {
+          kind: "marriage",
+          priority: spec.priority,
+          priorityLabel: spec.priorityLabel,
+          ids: [other, female],
+          anchorId: targetIndex === femaleGroupIndex ? female : other,
+          sourceIds: [targetIndex === femaleGroupIndex ? other : female],
+          targetIndex,
+          needKey: spec.needKey,
+          sourceRank: spec.sourceRank,
+          sourceClass: spec.sourceClass,
+          reason: spec.reason,
+        });
+      }
+    }
+  }
+
+  function addSupportMarriageCandidates(rows, ids, groups, groupIndex, preferredSupportIds = []) {
+    const preferredSet = new Set(preferredSupportIds);
+    const supportFemales = [
+      ...preferredSupportIds.filter((id) => isFemale(id) && hasSupportTrait(id)),
+      ...ids.filter((id) => !preferredSet.has(id) && isFemale(id) && hasSupportTrait(id)),
+    ];
+    if (!supportFemales.length) return;
+
+    for (let targetIndex = 0; targetIndex < groups.length; targetIndex += 1) {
+      const target = groups[targetIndex];
+      if (target.some(hasSupportTrait)) continue;
+      const anchors = groupAnchors(target, 5).filter((id) => !isFemale(id));
+      if (!anchors.length) continue;
+
+      for (const female of supportFemales) {
+        const donorIndex = groupIndex.get(female);
+        if (donorIndex === targetIndex || !canBorrowSupportFemale(female, groups[donorIndex])) continue;
+        const preferred = preferredSet.has(female);
+        for (const anchor of anchors) {
+          pushAdjustmentCandidate(rows, {
+            kind: "marriage",
+            priority: 4,
+            priorityLabel: "응원/악주 보강",
+            ids: [anchor, female],
+            anchorId: anchor,
+            sourceIds: [female],
+            targetIndex,
+            needKey: "support",
+            sourceRank: preferred ? 0 : 2,
+            sourceClass: preferred ? "보조 후보" : "보조 여무장",
+            reason: `${displayName(target[0])} 집단에 비어 있는 응원/악주 개성을 보강합니다.`,
+          });
+        }
+      }
+    }
+  }
+
+  function canBorrowSupportFemale(female, sourceGroup = []) {
+    if (sourceGroup.length <= 3) return true;
+    return sourceGroup.filter(hasSupportTrait).length > 1 && sourceGroup.includes(female);
+  }
+
+  function isMarriagePair(a, b) {
+    return isFemale(a) !== isFemale(b);
+  }
+
+  function pushAdjustmentCandidate(rows, spec) {
+    const ids = [...new Set(spec.ids)];
+    if (ids.length !== spec.ids.length || ids.length < 2 || ids.length > 3) return;
+    if (spec.kind === "marriage" && (ids.length !== 2 || !isMarriagePair(ids[0], ids[1]))) return;
+
+    const pairStats = candidatePairStats(ids);
+    if (pairStats.hasStarPair || (!pairStats.newPairs && !pairStats.upgradedPairs)) return;
+
+    const anchorId = spec.anchorId || ids[0];
+    const sourceIds = [...new Set(spec.sourceIds || ids.filter((id) => id !== anchorId))];
+    const anchorReach = affinityReach(anchorId);
+    const sourcePower = sourceIds.reduce((sum, id) => sum + fieldPower(id), 0);
+    rows.push({
+      ...spec,
+      ids,
+      anchorId,
+      sourceIds,
+      sourceRank: spec.sourceRank ?? 9,
+      sourceClass: spec.sourceClass || "",
+      pairStats,
+      anchorReach,
+      score:
+        sourcePower +
+        anchorReach.score * 0.55 +
+        pairStats.newPairs * 140 +
+        pairStats.upgradedPairs * 70 +
+        (ids.length === 3 ? 35 : 0) -
+        pairStats.existingPairs * 12,
+      badges: relationBadges(pairStats),
+    });
+  }
+
+  function candidatePairStats(ids) {
+    const stats = { newPairs: 0, upgradedPairs: 0, existingPairs: 0, hasStarPair: false };
+    for (let i = 0; i < ids.length; i += 1) {
+      for (let j = i + 1; j < ids.length; j += 1) {
+        const relation = relationBetween(ids[i], ids[j]);
+        if (relation?.value === 3) stats.hasStarPair = true;
+        else if (relation) {
+          stats.upgradedPairs += 1;
+          stats.existingPairs += 1;
+        } else {
+          stats.newPairs += 1;
+        }
+      }
+    }
+    return stats;
+  }
+
+  function hasStarPair(ids) {
+    return candidatePairStats(ids).hasStarPair;
+  }
+
+  function relationBadges(pairStats) {
+    const badges = [];
+    if (pairStats.newPairs) badges.push(`신규 연결 ${pairStats.newPairs}`);
+    if (pairStats.upgradedPairs) badges.push(`친애 강화 ${pairStats.upgradedPairs}`);
+    return badges;
+  }
+
+  function dedupeAdjustmentCandidates(candidates) {
+    const bestByPurpose = new Map();
+    for (const candidate of candidates) {
+      const key = adjustmentPurposeKey(candidate);
+      const previous = bestByPurpose.get(key);
+      if (!previous || compareAdjustmentSpecs(candidate, previous) < 0) bestByPurpose.set(key, candidate);
+    }
+    return [...bestByPurpose.values()].sort(compareAdjustmentSpecs);
+  }
+
+  function adjustmentPurposeKey(candidate) {
+    return [
+      candidate.kind,
+      candidate.priority,
+      candidate.targetIndex,
+      candidate.needKey || "",
+      [...candidate.sourceIds].sort((a, b) => a - b).join("+"),
+    ].join("|");
+  }
+
+  function compareAdjustmentSpecs(a, b) {
+    return (
+      a.priority - b.priority ||
+      (a.sourceRank ?? 9) - (b.sourceRank ?? 9) ||
+      b.anchorReach.score - a.anchorReach.score ||
+      b.score - a.score ||
+      b.pairStats.newPairs - a.pairStats.newPairs ||
+      displayName(a.anchorId).localeCompare(displayName(b.anchorId), "ko")
+    );
+  }
+
+  function hydrateRecommendation(spec, ids, planOptions, basePlan) {
+    const plan = withVirtualOaths([spec.ids], () => planRoster(ids, planOptions));
+    const baseStats = formationStats(basePlan.groups, basePlan.unassigned || []);
+    const stats = formationStats(plan.groups, plan.unassigned || []);
+    const shapeGain =
+      (baseStats.singleCount - stats.singleCount) * 90 +
+      (baseStats.smallCount - stats.smallCount) * 60 +
+      (baseStats.groupCount - stats.groupCount) * 35 +
+      (baseStats.unassignedCount - stats.unassignedCount) * 120;
+    return {
+      ...spec,
+      plan,
+      baseStats,
+      stats,
+      impact: spec.score + shapeGain,
+    };
+  }
+
+  function compareRecommendationRows(a, b) {
+    const unassignedGainA = a.baseStats.unassignedCount - a.stats.unassignedCount;
+    const unassignedGainB = b.baseStats.unassignedCount - b.stats.unassignedCount;
+    return (
+      a.priority - b.priority ||
+      (a.sourceRank ?? 9) - (b.sourceRank ?? 9) ||
+      unassignedGainB - unassignedGainA ||
+      b.impact - a.impact ||
+      b.anchorReach.score - a.anchorReach.score ||
+      b.score - a.score
+    );
+  }
+
+  function isSupportRecommendation(row) {
+    return row.priorityLabel === "응원/악주 보강" || row.needKey === "support";
+  }
+
+  function passesRecommendationFilters(row) {
+    if (row.kind === "oath" && !recommendationFilterValues.oath) return false;
+    if (row.kind === "marriage" && !recommendationFilterValues.marriage) return false;
+    if (isSupportRecommendation(row)) return recommendationFilterValues.support;
+    return recommendationFilterValues.rescue;
+  }
+
+  function recommendationSignature(kind, ids, targetIndex) {
+    return `${kind}|${targetIndex}|${[...ids].sort((a, b) => a - b).join("+")}`;
   }
 
   function clearResults() {
@@ -1194,10 +2494,12 @@
     for (const button of els.resultTabButtons) button.classList.toggle("active", button.dataset.resultTab === tab);
     els.results.classList.toggle("hidden", tab !== "formation");
     els.oathResults.classList.toggle("hidden", tab !== "oath");
+    els.recommendationFilters.classList.toggle("hidden", !(mode === "roster" && tab === "oath"));
   }
 
   function setResultTabsVisible(visible) {
     els.resultTabs.classList.toggle("hidden", !visible);
+    els.recommendationFilters.classList.toggle("hidden", !(visible && mode === "roster" && activeResultTab === "oath"));
     if (!visible) setResultTab("formation");
   }
 
@@ -1216,6 +2518,13 @@
     row.className = `relation-line relation-card ${REL_CLASS[edge.label]}`;
     row.innerHTML = `<span class="relation-name">${displayName(edge.a)}</span><span class="relation-symbol">${edge.label}</span><span class="relation-name relation-target">${displayName(edge.b)}</span>`;
     row.title = `${displayName(edge.a)} ${edge.arrow} ${edge.label} ${displayName(edge.b)}`;
+    return row;
+  }
+
+  function relationNote(text) {
+    const row = document.createElement("div");
+    row.className = "relation-line relation-card relation-more";
+    row.textContent = text;
     return row;
   }
 
@@ -1314,6 +2623,14 @@
     return true;
   }
 
+  function appendStaticBadge(parent, text) {
+    const badge = document.createElement("span");
+    badge.className = "change-badge";
+    badge.textContent = text;
+    parent.appendChild(badge);
+    return true;
+  }
+
   function renderFormationPreviewCard(group, index, parent) {
     const metrics = groupMetrics(group);
     const card = document.createElement("div");
@@ -1340,11 +2657,91 @@
     parent.appendChild(card);
   }
 
-  function renderOathRecommendations(recommendations, basePlan) {
+  function renderUnassignedSection(section, parent) {
+    const ids = sectionMemberIds(section);
+    const card = els.template.content.firstElementChild.cloneNode(true);
+    card.querySelector("h3").textContent = `미편성 ${section.title} · ${ids.map(displayName).slice(0, 3).join(", ")}`;
+    card.querySelector(".group-score").textContent =
+      section.key === "line" ? `${ids.length}명 / ${section.lines.length}라인` : `${ids.length}명`;
+
+    const memberList = card.querySelector(".member-list");
+    const buff = new Map(ids.map((id) => [id, 0]));
+    for (const id of ids) memberList.appendChild(memberChip(id, buff));
+
+    const relationList = card.querySelector(".relation-list");
+    relationList.classList.add("relation-grid");
+    const label = document.createElement("div");
+    label.className = "section-label";
+    label.textContent = "분류 기준";
+    relationList.appendChild(label);
+
+    if (section.key === "line") {
+      for (const line of section.lines) {
+        const metrics = groupMetrics(line.ids);
+        const lineOrder = new Map(line.ids.map((id, index) => [id, index]));
+        const edges = metrics.edges.sort(
+          (a, b) =>
+            lineOrder.get(a.a) - lineOrder.get(b.a) ||
+            lineOrder.get(a.b) - lineOrder.get(b.b) ||
+            b.value - a.value,
+        );
+        if (!edges.length) {
+          relationList.appendChild(relationNote(line.ids.map(displayName).join(" + ")));
+        } else {
+          for (const edge of edges) relationList.appendChild(relationLine(edge));
+        }
+      }
+    } else if (section.key === "strong") {
+      relationList.appendChild(relationNote("능력치/개성 기준으로 편성 가치가 높은 단독 후보"));
+    } else if (section.key === "support") {
+      relationList.appendChild(relationNote("보좌/응원/악주 계열 보조 개성 후보"));
+    } else {
+      relationList.appendChild(relationNote("-"));
+    }
+
+    parent.appendChild(card);
+  }
+
+  function renderUnassigned(ids, parent = els.results, groups = [], scope = null) {
+    if (!ids.length) return;
+    for (const section of classifyUnassigned(ids, groups, scope)) renderUnassignedSection(section, parent);
+  }
+
+  function renderUnassignedPreviewSection(section, parent) {
+    const ids = sectionMemberIds(section);
+    const card = document.createElement("div");
+    card.className = "formation-preview-card";
+
+    const top = document.createElement("div");
+    top.className = "group-top";
+    const title = document.createElement("h3");
+    title.textContent = `미편성 ${section.title} · ${ids.map(displayName).slice(0, 3).join(", ")}`;
+    const score = document.createElement("span");
+    score.className = "group-score";
+    score.textContent = section.key === "line" ? `${ids.length}명 / ${section.lines.length}라인` : `${ids.length}명`;
+    top.append(title, score);
+    card.appendChild(top);
+
+    const memberList = document.createElement("div");
+    memberList.className = "member-list";
+    const buff = new Map(ids.map((id) => [id, 0]));
+    for (const id of ids) memberList.appendChild(memberChip(id, buff));
+    card.appendChild(memberList);
+    parent.appendChild(card);
+  }
+
+  function renderUnassignedPreviewCard(ids, parent, groups = [], scope = null) {
+    if (!ids.length) return;
+    for (const section of classifyUnassigned(ids, groups, scope)) renderUnassignedPreviewSection(section, parent);
+  }
+
+  function renderOathRecommendations(recommendations, totalAvailable = recommendations.length) {
     if (!recommendations.length) {
       const node = document.createElement("div");
       node.className = "empty-state";
-      node.textContent = "총점과 편성 안정성이 함께 좋아지는 의형제 추천세트를 찾지 못했습니다.";
+      node.textContent = totalAvailable
+        ? "현재 필터 조건에 맞는 의형제/결혼 보정 후보가 없습니다."
+        : "v2 기준으로 추천할 의형제/결혼 보정 후보를 찾지 못했습니다.";
       els.oathResults.appendChild(node);
       return;
     }
@@ -1356,10 +2753,10 @@
       const top = document.createElement("div");
       top.className = "group-top";
       const title = document.createElement("h3");
-      title.textContent = `${index + 1}추천 · 의형제 재편성`;
+      title.textContent = `${index + 1}추천 · ${recommendation.kind === "marriage" ? "결혼" : "의형제"} 보정`;
       const score = document.createElement("span");
       score.className = "group-score";
-      score.textContent = `+${Math.round(recommendation.scoreDelta)}`;
+      score.textContent = recommendation.priorityLabel;
       top.append(title, score);
       card.appendChild(top);
 
@@ -1367,19 +2764,55 @@
       oathList.className = "oath-summary";
       const oathLabel = document.createElement("div");
       oathLabel.className = "section-label";
-      oathLabel.textContent = "추천 의형제";
+      oathLabel.textContent = "추천 조합";
       oathList.appendChild(oathLabel);
-      for (const oath of recommendation.oaths) {
-        appendRec(oathList, oath.map(displayName).join(" + "));
-      }
+      appendRec(oathList, recommendation.ids.map(displayName).join(" + "));
+      appendRec(oathList, recommendation.reason);
       card.appendChild(oathList);
 
-      const baseStats = formationStats(basePlan.groups);
+      const metaList = document.createElement("div");
+      metaList.className = "change-badges";
+      appendStaticBadge(metaList, recommendation.kind === "marriage" ? "결혼" : "의형제");
+      appendStaticBadge(metaList, recommendation.priorityLabel);
+      if (recommendation.sourceClass && recommendation.sourceClass !== recommendation.priorityLabel) {
+        appendStaticBadge(metaList, recommendation.sourceClass);
+      }
+      for (const badge of recommendation.badges) appendStaticBadge(metaList, badge);
+      const metaSection = document.createElement("div");
+      metaSection.className = "recommendations";
+      const metaLabel = document.createElement("div");
+      metaLabel.className = "section-label";
+      metaLabel.textContent = "추천 기준";
+      metaSection.append(metaLabel, metaList);
+      card.appendChild(metaSection);
+
       const changeList = document.createElement("div");
       changeList.className = "change-badges";
-      const hasGroupChange = appendChangeBadge(changeList, "집단", basePlan.groups.length, recommendation.plan.groups.length);
-      const hasSingleChange = appendChangeBadge(changeList, "1인 집단", baseStats.singleCount, recommendation.stats.singleCount);
-      if (hasGroupChange || hasSingleChange) {
+      const hasGroupChange = appendChangeBadge(
+        changeList,
+        "집단",
+        recommendation.baseStats.groupCount,
+        recommendation.stats.groupCount,
+      );
+      const hasSmallChange = appendChangeBadge(
+        changeList,
+        "소집단",
+        recommendation.baseStats.smallCount,
+        recommendation.stats.smallCount,
+      );
+      const hasSingleChange = appendChangeBadge(
+        changeList,
+        "1인 집단",
+        recommendation.baseStats.singleCount,
+        recommendation.stats.singleCount,
+      );
+      const hasUnassignedChange = appendChangeBadge(
+        changeList,
+        "미편성",
+        recommendation.baseStats.unassignedCount,
+        recommendation.stats.unassignedCount,
+      );
+      if (hasGroupChange || hasSmallChange || hasSingleChange || hasUnassignedChange) {
         const changeSection = document.createElement("div");
         changeSection.className = "recommendations";
         const changeLabel = document.createElement("div");
@@ -1398,6 +2831,12 @@
       recommendation.plan.groups.forEach((group, groupIndex) => {
         renderFormationPreviewCard(group, groupIndex, formationList);
       });
+      renderUnassignedPreviewCard(
+        recommendation.plan.unassigned || [],
+        formationList,
+        recommendation.plan.groups,
+        [...new Set(recommendation.plan.groups.flat().concat(recommendation.plan.unassigned || []))],
+      );
       card.appendChild(formationList);
 
       els.oathResults.appendChild(card);
@@ -1418,14 +2857,24 @@
       return;
     }
 
-    const planOptions = planningOptions(ids.length, warnings);
+    const fixedCoreIds = resolveFixedCoreIds(ids, duplicateState, warnings);
+    const planOptions = {
+      ...planningOptions(ids.length, warnings, fixedCoreIds.length),
+      fixedCoreIds,
+    };
     const plan = planRoster(ids, planOptions);
     const groups = plan.groups;
+    const unassigned = plan.unassigned || [];
     if (planOptions.mode === "count" && groups.length !== planOptions.targetCount) {
       warnings.push(`목표 ${planOptions.targetCount}집단에 최대한 가깝게 ${groups.length}집단으로 편성했습니다.`);
     }
+    if (unassigned.length) {
+      warnings.push(`편성 제한상 ${unassigned.length}명은 기본 편성에서 미편성으로 남깁니다.`);
+    }
     const total = totalScore(groups);
-    const oathRecommendations = activeResultTab === "oath" ? recommendOathSets(ids, planOptions, plan) : [];
+    const allOathRecommendations =
+      activeResultTab === "oath" ? recommendOathSets(ids, planOptions, plan, RECOMMENDATION_LIMIT * 4) : [];
+    const oathRecommendations = allOathRecommendations.filter(passesRecommendationFilters).slice(0, RECOMMENDATION_LIMIT);
 
     if (activeResultTab === "formation") {
       groups.forEach((group, index) => {
@@ -1435,19 +2884,20 @@
           .join(", ");
         renderGroup(`${index + 1}집단 · ${topNames}`, group);
       });
+      renderUnassigned(unassigned, els.results, groups, ids);
     } else {
-      renderOathRecommendations(oathRecommendations, plan);
+      renderOathRecommendations(oathRecommendations, allOathRecommendations.length);
     }
 
     renderWarnings(warnings);
     setResultTab(activeResultTab);
     if (activeResultTab === "oath") {
-      els.resultTitle.textContent = "의형제 추천";
-      els.resultMeta.textContent = `${ids.length}명 · 추천 ${oathRecommendations.length}건 · 예상 편성 변화`;
+      els.resultTitle.textContent = "의형제/결혼 추천";
+      els.resultMeta.textContent = `${ids.length}명 · 추천 ${oathRecommendations.length}/${allOathRecommendations.length}건 · v2 보정 후보`;
       els.scoreBadge.textContent = `${oathRecommendations.length}건`;
     } else {
       els.resultTitle.textContent = "보유 장수 편성 결과";
-      els.resultMeta.textContent = `${ids.length}명 · 목표 ${planOptions.targetCount}집단 · 최대 ${planOptions.maxSize}명`;
+      els.resultMeta.textContent = `${ids.length}명 · 목표 ${planOptions.targetCount}집단 · 최대 ${planOptions.maxSize}명 · 코어 고정 ${fixedCoreIds.length}명 · 미편성 ${unassigned.length}명`;
       els.scoreBadge.textContent = `${Math.round(total)}`;
     }
   }
@@ -1594,6 +3044,9 @@
       updateRosterLimitControls();
       updateDuplicateSelectors();
     });
+    els.coreInput.addEventListener("input", () => {
+      updateRosterLimitControls();
+    });
     for (const input of [els.groupCount, els.maxSize]) {
       input.addEventListener("change", () => {
         rosterLimitValues.groupCount = Number(els.groupCount.value) || rosterLimitValues.groupCount;
@@ -1601,8 +3054,15 @@
         if (mode === "roster") renderRoster();
       });
     }
+    for (const input of els.recommendationFilterInputs) {
+      input.addEventListener("change", () => {
+        recommendationFilterValues[input.dataset.recFilter] = input.checked;
+        if (mode === "roster" && activeResultTab === "oath") renderRoster();
+      });
+    }
     els.sampleRoster.addEventListener("click", () => {
       els.rosterInput.value = SAMPLE_ROSTER;
+      els.coreInput.value = "";
       updateRosterLimitControls();
       updateDuplicateSelectors();
       renderRoster();
@@ -1618,6 +3078,7 @@
     setupDatalist();
     bindEvents();
     els.rosterInput.value = "";
+    els.coreInput.value = "";
     els.centerInput.value = "";
     updateRosterLimitControls();
     updateDuplicateSelectors();
