@@ -173,7 +173,7 @@
     const rawMaxSize = Number(els.maxSize.value);
     const maxSize = clampInteger(rawMaxSize, MIN_GROUP_SIZE, MAX_GROUP_SIZE, rosterLimitValues.maxSize);
     if (Number.isFinite(rawMaxSize) && Math.round(rawMaxSize) !== maxSize) {
-      warnings.push(`집단당 최대 인원은 ${MIN_GROUP_SIZE}~${MAX_GROUP_SIZE} 범위로 조정됩니다.`);
+      warnings.push(`집단 상한은 ${MIN_GROUP_SIZE}~${MAX_GROUP_SIZE} 범위로 조정됩니다.`);
     }
 
     const minCount = Math.max(1, minTargetCount);
@@ -2897,7 +2897,7 @@
       els.scoreBadge.textContent = `${oathRecommendations.length}건`;
     } else {
       els.resultTitle.textContent = "보유 장수 편성 결과";
-      els.resultMeta.textContent = `${ids.length}명 · 목표 ${planOptions.targetCount}집단 · 최대 ${planOptions.maxSize}명 · 코어 고정 ${fixedCoreIds.length}명 · 미편성 ${unassigned.length}명`;
+      els.resultMeta.textContent = `${ids.length}명 · 목표 ${planOptions.targetCount}집단 · 상한 ${planOptions.maxSize}명 · 코어 고정 ${fixedCoreIds.length}명 · 미편성 ${unassigned.length}명`;
       els.scoreBadge.textContent = `${Math.round(total)}`;
     }
   }
