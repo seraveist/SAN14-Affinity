@@ -1009,6 +1009,119 @@
     }
   }
 
+  function groupSizeBalancePenalty(groups) {
+    if (!groups.length) return 0;
+    const sizes = groups.map((group) => group.length);
+    const total = sizes.reduce((sum, size) => sum + size, 0);
+    const average = total / sizes.length;
+    const spread = Math.max(...sizes) - Math.min(...sizes);
+    const deviation = sizes.reduce((sum, size) => sum + Math.abs(size - average), 0);
+    const tiny = sizes.filter((size) => size > 1 && size <= 3).length;
+    return deviation * 60 + spread * 18 + tiny * 90;
+  }
+
+  function movablePackageFollowers(seed, source) {
+    return source
+      .slice(1)
+      .filter((id) => id !== seed)
+      .map((id) => {
+        const relation = relationBetween(seed, id);
+        if (!relation) return null;
+
+        const sourceWithoutPair = source.filter((other) => other !== seed && other !== id);
+        const remainingFit = groupRelationSummary(id, sourceWithoutPair);
+        const dependsOnSeed =
+          remainingFit.links === 0 || relation.value === 3 || relation.value >= remainingFit.quality;
+        if (!dependsOnSeed) return null;
+
+        const value =
+          relation.value * 180 +
+          (remainingFit.links ? -remainingFit.quality * 75 : 210) +
+          (relation.value === 3 ? 160 : 0) +
+          fieldPower(id) * 0.08;
+        return { id, relation, value };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.value - a.value || fieldPower(b.id) - fieldPower(a.id));
+  }
+
+  function sourceMovePackages(seed, source) {
+    const followers = movablePackageFollowers(seed, source).slice(0, 2).map((row) => row.id);
+    const rows = [];
+
+    for (let count = 1; count <= followers.length; count += 1) {
+      const ids = [seed, ...followers.slice(0, count)];
+      const metrics = groupMetrics(ids);
+      if (!metrics.edges.length) continue;
+
+      const starCount = metrics.edges.filter((edge) => edge.value === 3).length;
+      const score =
+        metrics.quality * 170 +
+        metrics.edges.length * 90 +
+        starCount * 230 +
+        ids.reduce((sum, id) => sum + fieldPower(id), 0) * 0.12;
+      rows.push({ ids, score, quality: metrics.quality, starCount });
+    }
+
+    return rows;
+  }
+
+  function findBestPackageRebalance(groups, scope, maxSize) {
+    const baseScore = totalScore(groups);
+    const baseBalancePenalty = groupSizeBalancePenalty(groups);
+    let best = null;
+
+    for (let sourceIndex = 0; sourceIndex < groups.length; sourceIndex += 1) {
+      const source = groups[sourceIndex];
+      if (source.length <= 4) continue;
+
+      for (const seed of source.slice(1)) {
+        for (const line of sourceMovePackages(seed, source)) {
+          const moving = new Set(line.ids);
+          const nextSource = source.filter((id) => !moving.has(id));
+          if (nextSource.length < 2 || !groupMetrics(nextSource).edges.length) continue;
+
+          for (let targetIndex = 0; targetIndex < groups.length; targetIndex += 1) {
+            if (sourceIndex === targetIndex) continue;
+
+            const target = groups[targetIndex];
+            if (target.length + line.ids.length > maxSize) continue;
+            if (source.length - target.length < line.ids.length + 1) continue;
+
+            const targetFit = packageGroupFit(line, target, scope);
+            if (!targetFit || targetFit.score < 680) continue;
+
+            const nextGroups = groups.map((group, index) => {
+              if (index === sourceIndex) return nextSource;
+              if (index === targetIndex) return [...group, ...line.ids];
+              return [...group];
+            });
+
+            const scoreDelta = totalScore(nextGroups) - baseScore;
+            if (scoreDelta < -80) continue;
+
+            const balanceDelta = baseBalancePenalty - groupSizeBalancePenalty(nextGroups);
+            if (balanceDelta <= 0) continue;
+
+            const adjustedDelta = scoreDelta + balanceDelta + targetFit.score * 0.03;
+            if (adjustedDelta < 220) continue;
+
+            const row = { sourceIndex, targetIndex, ids: line.ids, adjustedDelta, scoreDelta, balanceDelta };
+            if (
+              !best ||
+              row.adjustedDelta > best.adjustedDelta ||
+              (row.adjustedDelta === best.adjustedDelta && row.scoreDelta > best.scoreDelta)
+            ) {
+              best = row;
+            }
+          }
+        }
+      }
+    }
+
+    return best;
+  }
+
   function balanceCoreRosterGroups(initialGroups, scope, maxSize) {
     const groups = initialGroups.map((group) => [...group]);
 
@@ -1043,6 +1156,14 @@
       if (!best) break;
       groups[best.sourceIndex] = groups[best.sourceIndex].filter((id) => id !== best.id);
       groups[best.targetIndex].push(best.id);
+    }
+
+    for (let pass = 0; pass < 4; pass += 1) {
+      const best = findBestPackageRebalance(groups, scope, maxSize);
+      if (!best) break;
+      const moving = new Set(best.ids);
+      groups[best.sourceIndex] = groups[best.sourceIndex].filter((id) => !moving.has(id));
+      groups[best.targetIndex].push(...best.ids);
     }
 
     return groups;
