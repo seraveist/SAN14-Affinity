@@ -2107,7 +2107,7 @@
     const card = els.template.content.firstElementChild.cloneNode(true);
     const parent = options.parent || els.results;
     card.querySelector("h3").textContent = title;
-    card.querySelector(".group-score").textContent = `score ${metrics.score}`;
+    card.querySelector(".group-score").textContent = `${group.length}명 | ${metrics.score}`;
 
     const memberList = card.querySelector(".member-list");
     for (const id of group) memberList.appendChild(memberChip(id, metrics.buff));
@@ -2184,7 +2184,7 @@
     title.textContent = `${index + 1}집단 · ${topNames}`;
     const score = document.createElement("span");
     score.className = "group-score";
-    score.textContent = `score ${metrics.score}`;
+    score.textContent = `${group.length}명 | ${metrics.score}`;
     top.append(title, score);
     card.appendChild(top);
 

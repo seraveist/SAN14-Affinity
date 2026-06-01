@@ -876,7 +876,10 @@ h3 {
     padding: 0 10px;
   }
 
-  .relation-grid,
+  .relation-grid {
+    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  }
+
   .relation-grid.affinity-list {
     grid-template-columns: 1fr;
   }
