@@ -9,6 +9,7 @@
   const SUPPORT_TRAITS = new Set(["보좌", "응원", "악주"]);
   const TIER_ORDER = { reserve: 0, support: 1, upper: 2, key: 3, core: 4 };
   const THEME_STORAGE_KEY = "san14-theme";
+  const APP_VERSION = "v1.3";
   const REGRESSION_SAMPLES = {
     cao: {
       groupCount: 4,
@@ -1679,7 +1680,7 @@
           fieldPower(b) - fieldPower(a) ||
           affinityReach(b).score - affinityReach(a).score,
       )
-      .find((id) => !hasStarPair([...baseIds, id]));
+      .find((id) => !hasExistingAffinityPair([...baseIds, id]));
   }
 
   function roleComplementScore(id, group) {
@@ -1805,7 +1806,7 @@
     if (spec.kind === "marriage" && (ids.length !== 2 || !isMarriagePair(ids[0], ids[1]))) return;
 
     const pairStats = candidatePairStats(ids);
-    if (pairStats.hasStarPair || (!pairStats.newPairs && !pairStats.upgradedPairs)) return;
+    if (pairStats.existingPairs || !pairStats.newPairs) return;
 
     const anchorId = spec.anchorId || ids[0];
     const sourceIds = [...new Set(spec.sourceIds || ids.filter((id) => id !== anchorId))];
@@ -1840,10 +1841,10 @@
     for (let i = 0; i < ids.length; i += 1) {
       for (let j = i + 1; j < ids.length; j += 1) {
         const relation = relationBetween(ids[i], ids[j]);
-        if (relation?.value === 3) stats.hasStarPair = true;
-        else if (relation) {
-          stats.upgradedPairs += 1;
+        if (relation) {
           stats.existingPairs += 1;
+          if (relation.value === 3) stats.hasStarPair = true;
+          else stats.upgradedPairs += 1;
         } else {
           stats.newPairs += 1;
         }
@@ -1852,8 +1853,8 @@
     return stats;
   }
 
-  function hasStarPair(ids) {
-    return candidatePairStats(ids).hasStarPair;
+  function hasExistingAffinityPair(ids) {
+    return candidatePairStats(ids).existingPairs > 0;
   }
 
   function relationBadges(pairStats) {
@@ -2297,7 +2298,7 @@
       node.className = "empty-state";
       node.textContent = totalAvailable
         ? "현재 필터 조건에 맞는 의형제/결혼 보정 후보가 없습니다."
-        : "v1.2 기준으로 추천할 의형제/결혼 보정 후보를 찾지 못했습니다.";
+        : `${APP_VERSION} 기준으로 추천할 의형제/결혼 보정 후보를 찾지 못했습니다.`;
       els.oathResults.appendChild(node);
       return;
     }
@@ -2451,7 +2452,7 @@
     setResultTab(activeResultTab);
     if (activeResultTab === "oath") {
       els.resultTitle.textContent = "의형제/결혼 추천";
-      els.resultMeta.textContent = `${ids.length}명 · 추천 ${oathRecommendations.length}/${allOathRecommendations.length}건 · v1.2 보정 후보`;
+      els.resultMeta.textContent = `${ids.length}명 · 추천 ${oathRecommendations.length}/${allOathRecommendations.length}건 · ${APP_VERSION} 보정 후보`;
       els.scoreBadge.textContent = `${oathRecommendations.length}건`;
     } else {
       els.resultTitle.textContent = "보유 장수 편성 결과";
