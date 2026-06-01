@@ -8,8 +8,29 @@
   const RECOMMENDATION_LIMIT = 6;
   const SUPPORT_TRAITS = new Set(["보좌", "응원", "악주"]);
   const TIER_ORDER = { reserve: 0, support: 1, upper: 2, key: 3, core: 4 };
-  const SAMPLE_ROSTER =
-    "유비, 관우, 장비, 황충, 조운, 마초, 마대, 제갈량, 서서, 방통, 마속, 주창, 관평, 관흥, 관은병, 엄안, 법정, 석도, 공손찬, 후씨, 감씨, 미씨, 황월영, 마운록, 노식, 주준, 황보숭, 양씨, 아귀, 등지, 진도, 요화, 위연, 이엄, 이회";
+  const THEME_STORAGE_KEY = "san14-theme";
+  const REGRESSION_SAMPLES = {
+    cao: {
+      groupCount: 4,
+      maxSize: 20,
+      text: "조조 조인 조홍 조순 조휴 하후돈 하후연 하후덕 하후상 순욱 순유 곽가 유엽 정욱 변씨 환씨 조비 조창 조식 조충 우금 우금 장료 이전 악진 서황 장합 사마의 조엄 가후 전위 허저 종요 장창포 종회 등애 학소",
+    },
+    liu: {
+      groupCount: 4,
+      maxSize: 20,
+      text: "유비 관우 장비 손건 미축 미방 감씨 미씨 조운 주창 진도 요화 제갈량 황월영 방통 서서 위연 황충 마초 마대 마운록 장임 황권 엄안 뇌동 법정 오란 오의 오반 유봉 관평 관색 관흥 관은병 장포 하후씨 장씨",
+    },
+    sun: {
+      groupCount: 4,
+      maxSize: 20,
+      text: "손책 주유 대교 소교 노숙 정보 한당 황개 주치 여범 장소 장굉 조무 감녕 여몽 손권 오국태 육손 손씨 장흠 전종 주연 주태 손하 손익 손상향 서씨 제갈근 손교 손유 태사자 태사향",
+    },
+    yuan: {
+      groupCount: 4,
+      maxSize: 20,
+      text: "원소 유씨 원담 원희 원상 고간 안량 문추 고람 장합 저수 전풍 저곡 심배 봉기 곽도 순우경 전예 선우보 염유 전주 유화",
+    },
+  };
 
   const officers = new Map(
     Object.entries(DATA.officers).map(([id, officer]) => [Number(id), { ...officer, id: Number(id) }]),
@@ -33,8 +54,9 @@
     recommendationFilters: document.querySelector("#recommendationFilters"),
     recommendationFilterInputs: [...document.querySelectorAll("[data-rec-filter]")],
     hopDepth: document.querySelector("#hopDepth"),
-    sampleRoster: document.querySelector("#sampleRoster"),
-    runButton: document.querySelector("#runButton"),
+    sampleRosterButtons: [...document.querySelectorAll("[data-sample-roster]")],
+    themeToggle: document.querySelector("#themeToggle"),
+    runButtons: [...document.querySelectorAll("[data-run-action]")],
     resultTitle: document.querySelector("#resultTitle"),
     resultMeta: document.querySelector("#resultMeta"),
     scoreBadge: document.querySelector("#scoreBadge"),
@@ -50,6 +72,39 @@
   const rosterLimitValues = { groupCount: 4, maxSize: 20 };
   const recommendationFilterValues = { oath: true, marriage: true, rescue: true, support: true };
   const duplicateSelectionValues = new Map();
+
+  function preferredSystemTheme() {
+    return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ? "dark" : "light";
+  }
+
+  function setTheme(theme, persist = false) {
+    const nextTheme = theme === "dark" ? "dark" : "light";
+    if (document.documentElement?.dataset) document.documentElement.dataset.theme = nextTheme;
+    if (els.themeToggle) {
+      els.themeToggle.textContent = nextTheme === "dark" ? "☀" : "☾";
+      els.themeToggle.setAttribute("aria-label", `${nextTheme === "dark" ? "라이트" : "다크"} 테마로 변경`);
+      els.themeToggle.title = `${nextTheme === "dark" ? "라이트" : "다크"} 테마`;
+    }
+    if (persist) {
+      try {
+        window.localStorage?.setItem(THEME_STORAGE_KEY, nextTheme);
+      } catch {
+        // Theme persistence is optional.
+      }
+    }
+  }
+
+  function initTheme() {
+    let savedTheme = document.documentElement?.dataset?.theme;
+    if (!savedTheme) {
+      try {
+        savedTheme = window.localStorage?.getItem(THEME_STORAGE_KEY);
+      } catch {
+        savedTheme = null;
+      }
+    }
+    setTheme(savedTheme || preferredSystemTheme());
+  }
 
   function edgeKey(source, target) {
     return `${source}|${target}`;
@@ -1169,6 +1224,100 @@
     return groups;
   }
 
+  function isKeyUpperRevalidationTarget(id, scope) {
+    const info = tierInfo(id, scope);
+    return !info.support && (info.tier === "key" || info.tier === "upper" || info.tier === "core");
+  }
+
+  function revalidationMoveLines(seed, source, scope) {
+    if (!isKeyUpperRevalidationTarget(seed, scope)) return [];
+
+    return sourceMovePackages(seed, source)
+      .filter((line) => line.ids.length >= 2 && !line.starCount)
+      .filter((line) => line.ids.every((id) => id !== source[0]))
+      .sort((a, b) => b.ids.length - a.ids.length || b.score - a.score);
+  }
+
+  function findBestKeyUpperRevalidation(groups, scope, maxSize) {
+    const baseScore = totalScore(groups);
+    const baseBalancePenalty = groupSizeBalancePenalty(groups);
+    let best = null;
+
+    for (let sourceIndex = 0; sourceIndex < groups.length; sourceIndex += 1) {
+      const source = groups[sourceIndex];
+      if (source.length <= 3) continue;
+
+      for (const seed of source.slice(1)) {
+        for (const line of revalidationMoveLines(seed, source, scope)) {
+          const moving = new Set(line.ids);
+          const nextSource = source.filter((id) => !moving.has(id));
+          if (nextSource.length < 2 || !groupMetrics(nextSource).edges.length) continue;
+
+          for (let targetIndex = 0; targetIndex < groups.length; targetIndex += 1) {
+            if (sourceIndex === targetIndex) continue;
+
+            const target = groups[targetIndex];
+            if (target.length + line.ids.length > maxSize) continue;
+            if (source.length < target.length + line.ids.length) continue;
+
+            const targetFit = packageGroupFit(line, target, scope);
+            if (!targetFit || targetFit.score < 620) continue;
+
+            const currentFit = packageGroupFit(line, nextSource, scope);
+            const nextGroups = groups.map((group, index) => {
+              if (index === sourceIndex) return nextSource;
+              if (index === targetIndex) return [...group, ...line.ids];
+              return [...group];
+            });
+            const scoreDelta = totalScore(nextGroups) - baseScore;
+            if (scoreDelta < -110) continue;
+
+            const balanceDelta = baseBalancePenalty - groupSizeBalancePenalty(nextGroups);
+            const sizeRelief = Math.max(0, source.length - target.length) * 34;
+            const lineBonus = line.ids.length >= 2 ? 90 : 0;
+            const targetCompactBonus = targetFit.quality * 34 + targetFit.links * 20 + targetFit.star * 80;
+            const lostQualityPenalty = Math.max(0, (currentFit?.quality || 0) - targetFit.quality) * 42;
+            const adjustedDelta =
+              scoreDelta + balanceDelta * 0.7 + sizeRelief + lineBonus + targetCompactBonus - lostQualityPenalty;
+            if (adjustedDelta < 260) continue;
+
+            const row = {
+              sourceIndex,
+              targetIndex,
+              ids: line.ids,
+              adjustedDelta,
+              scoreDelta,
+              balanceDelta,
+            };
+            if (
+              !best ||
+              row.adjustedDelta > best.adjustedDelta ||
+              (row.adjustedDelta === best.adjustedDelta && row.scoreDelta > best.scoreDelta)
+            ) {
+              best = row;
+            }
+          }
+        }
+      }
+    }
+
+    return best;
+  }
+
+  function revalidateKeyUpperAssignments(initialGroups, scope, maxSize) {
+    const groups = initialGroups.map((group) => [...group]);
+
+    for (let pass = 0; pass < 5; pass += 1) {
+      const best = findBestKeyUpperRevalidation(groups, scope, maxSize);
+      if (!best) break;
+      const moving = new Set(best.ids);
+      groups[best.sourceIndex] = groups[best.sourceIndex].filter((id) => !moving.has(id));
+      groups[best.targetIndex].push(...best.ids);
+    }
+
+    return groups;
+  }
+
   function cleanupCoreRosterPlan(groups, remaining, scope) {
     const unassigned = new Set(remaining);
     const cleanGroups = [];
@@ -1204,7 +1353,8 @@
     assignRosterPhase(groups, remaining, ids, maxSize, "reserve");
     assignSmallLinePackages(groups, remaining, ids, maxSize);
     const balanced = balanceCoreRosterGroups(groups, ids, maxSize);
-    return cleanupCoreRosterPlan(balanced, remaining, ids);
+    const revalidated = revalidateKeyUpperAssignments(balanced, ids, maxSize);
+    return cleanupCoreRosterPlan(revalidated, remaining, ids);
   }
 
   function normalizePlanOptions(options) {
@@ -1374,7 +1524,7 @@
       if (seen.has(signature)) continue;
       seen.add(signature);
       const row = hydrateRecommendation(spec, ids, planOptions, basePlan);
-      if (row.stats.unassignedCount <= row.baseStats.unassignedCount) rows.push(row);
+      if (row.stats.unassignedCount <= row.baseStats.unassignedCount && !isRecommendationTooUnstable(row)) rows.push(row);
     }
 
     return rows.sort(compareRecommendationRows).slice(0, limit);
@@ -1404,8 +1554,8 @@
           sourceClass: source.sourceClass,
           reason:
             source.index < 0
-              ? "미편성 후보 라인을 기존 집단의 넓은 친애 앵커와 연결합니다."
-              : "이미 형성된 소규모 라인을 다른 집단의 넓은 친애 앵커와 연결합니다.",
+              ? "후보 집단 병합"
+              : "소집단 병합",
         });
       }
     }
@@ -1423,7 +1573,7 @@
             targetIndex: target.index,
             sourceRank: 0,
             sourceClass: "강력 단독",
-            reason: `${displayName(singleId)} 장수를 기존 집단 코어와 연결해 미편성에서 구제합니다.`,
+            reason: "미편성 구제",
           });
         }
       }
@@ -1442,7 +1592,7 @@
             targetIndex: target.index,
             sourceRank: 1,
             sourceClass: "강력 단독",
-            reason: "작은 라인에 남는 단독 장수 둘을 연결해 별도 축으로 키웁니다.",
+            reason: "신집단 독립",
           });
         }
       }
@@ -1464,7 +1614,7 @@
               needKey: need.key,
               sourceRank: source.sourceRank,
               sourceClass: source.sourceClass,
-              reason: `${need.label} 역할이 약한 집단에 ${displayName(source.id)} 장수를 연결합니다.`,
+              reason: `${need.label} 보강`,
             });
           }
         }
@@ -1589,7 +1739,7 @@
         pushAdjustmentCandidate(rows, {
           kind: "marriage",
           priority: spec.priority,
-          priorityLabel: spec.priorityLabel,
+          priorityLabel: spec.needKey === "support" ? "범위 버프 보강" : spec.priorityLabel,
           ids: [other, female],
           anchorId: targetIndex === femaleGroupIndex ? female : other,
           sourceIds: [targetIndex === femaleGroupIndex ? other : female],
@@ -1597,7 +1747,7 @@
           needKey: spec.needKey,
           sourceRank: spec.sourceRank,
           sourceClass: spec.sourceClass,
-          reason: spec.reason,
+          reason: "미혼 상태 가정",
         });
       }
     }
@@ -1625,15 +1775,15 @@
           pushAdjustmentCandidate(rows, {
             kind: "marriage",
             priority: 4,
-            priorityLabel: "응원/악주 보강",
+            priorityLabel: "범위 버프 보강",
             ids: [anchor, female],
             anchorId: anchor,
             sourceIds: [female],
             targetIndex,
             needKey: "support",
             sourceRank: preferred ? 0 : 2,
-            sourceClass: preferred ? "보조 후보" : "보조 여무장",
-            reason: `${displayName(target[0])} 집단에 비어 있는 응원/악주 개성을 보강합니다.`,
+            sourceClass: preferred ? "보조 후보" : "응원/악주 여무장",
+            reason: `${displayName(target[0])} 집단에 응원/악주 버프 보강`,
           });
         }
       }
@@ -1661,6 +1811,10 @@
     const sourceIds = [...new Set(spec.sourceIds || ids.filter((id) => id !== anchorId))];
     const anchorReach = affinityReach(anchorId);
     const sourcePower = sourceIds.reduce((sum, id) => sum + fieldPower(id), 0);
+    const badges = relationBadges(pairStats);
+    if (spec.kind === "marriage") badges.unshift("미혼 가정");
+    if (spec.needKey === "support" && !badges.includes("응원/악주")) badges.push("응원/악주");
+
     rows.push({
       ...spec,
       ids,
@@ -1677,7 +1831,7 @@
         pairStats.upgradedPairs * 70 +
         (ids.length === 3 ? 35 : 0) -
         pairStats.existingPairs * 12,
-      badges: relationBadges(pairStats),
+      badges,
     });
   }
 
@@ -1740,10 +1894,74 @@
     );
   }
 
+  function formationMemberIndex(groups, unassigned = []) {
+    const map = new Map();
+    groups.forEach((group, index) => {
+      for (const id of group) map.set(id, index);
+    });
+    for (const id of unassigned) {
+      if (!map.has(id)) map.set(id, -1);
+    }
+    return map;
+  }
+
+  function inSameAssignedGroup(map, a, b) {
+    const groupA = map.get(a);
+    const groupB = map.get(b);
+    return groupA !== undefined && groupA >= 0 && groupA === groupB;
+  }
+
+  function recommendationStability(basePlan, nextPlan) {
+    const baseGroups = basePlan.groups || [];
+    const nextIndex = formationMemberIndex(nextPlan.groups || [], nextPlan.unassigned || []);
+    const stats = {
+      starBreaks: 0,
+      doubleBreaks: 0,
+      singleBreaks: 0,
+      coreBreaks: 0,
+      penalty: 0,
+      badges: [],
+    };
+
+    for (const group of baseGroups) {
+      if (group.length < 2) continue;
+      const core = group[0];
+      for (const id of group.slice(1)) {
+        const relation = relationBetween(core, id);
+        if (!relation || relation.value < 2) continue;
+        if (!inSameAssignedGroup(nextIndex, core, id)) stats.coreBreaks += 1;
+      }
+
+      for (let i = 0; i < group.length; i += 1) {
+        for (let j = i + 1; j < group.length; j += 1) {
+          const relation = relationBetween(group[i], group[j]);
+          if (!relation || inSameAssignedGroup(nextIndex, group[i], group[j])) continue;
+          if (relation.value === 3) stats.starBreaks += 1;
+          else if (relation.value === 2) stats.doubleBreaks += 1;
+          else stats.singleBreaks += 1;
+        }
+      }
+    }
+
+    stats.penalty =
+      stats.starBreaks * 720 + stats.doubleBreaks * 180 + stats.singleBreaks * 35 + stats.coreBreaks * 90;
+
+    if (stats.starBreaks) stats.badges.push("분파 안정성 제외");
+    else if (stats.coreBreaks >= 3 || stats.doubleBreaks >= 2) stats.badges.push("분파 안정성 낮음");
+    else if (stats.penalty) stats.badges.push("분파 변동 감점");
+
+    return stats;
+  }
+
+  function isRecommendationTooUnstable(row) {
+    return row.stability.starBreaks > 0 || row.stability.coreBreaks >= 4 || row.impact < 0;
+  }
+
   function hydrateRecommendation(spec, ids, planOptions, basePlan) {
     const plan = withVirtualOaths([spec.ids], () => planRoster(ids, planOptions));
     const baseStats = formationStats(basePlan.groups, basePlan.unassigned || []);
     const stats = formationStats(plan.groups, plan.unassigned || []);
+    const stability = recommendationStability(basePlan, plan);
     const shapeGain =
       (baseStats.singleCount - stats.singleCount) * 90 +
       (baseStats.smallCount - stats.smallCount) * 60 +
@@ -1754,17 +1972,23 @@
       plan,
       baseStats,
       stats,
-      impact: spec.score + shapeGain,
+      stability,
+      badges: [...spec.badges, ...stability.badges],
+      impact: spec.score + shapeGain - stability.penalty,
     };
   }
 
   function compareRecommendationRows(a, b) {
     const unassignedGainA = a.baseStats.unassignedCount - a.stats.unassignedCount;
     const unassignedGainB = b.baseStats.unassignedCount - b.stats.unassignedCount;
+    const kindRankA = a.kind === "marriage" ? 1 : 0;
+    const kindRankB = b.kind === "marriage" ? 1 : 0;
     return (
       a.priority - b.priority ||
       (a.sourceRank ?? 9) - (b.sourceRank ?? 9) ||
       unassignedGainB - unassignedGainA ||
+      kindRankA - kindRankB ||
+      a.stability.penalty - b.stability.penalty ||
       b.impact - a.impact ||
       b.anchorReach.score - a.anchorReach.score ||
       b.score - a.score
@@ -1772,7 +1996,7 @@
   }
 
   function isSupportRecommendation(row) {
-    return row.priorityLabel === "응원/악주 보강" || row.needKey === "support";
+    return row.priorityLabel === "범위 버프 보강" || row.needKey === "support";
   }
 
   function passesRecommendationFilters(row) {
@@ -1971,12 +2195,31 @@
     parent.appendChild(card);
   }
 
+  function unassignedSectionLabel(section) {
+    if (section.key === "line") return "후보";
+    if (section.key === "strong") return "단독";
+    if (section.key === "support") return "보조";
+    return "미편성";
+  }
+
+  function unassignedSectionDescription(section) {
+    if (section.key === "line") return "미편성 장수끼리 2~3인 친애 라인을 만들 수 있는 후보";
+    if (section.key === "strong") return "능력치/개성 기준으로 편성 가치가 높은 단독 후보";
+    if (section.key === "support") return "보좌/응원/악주 계열 보조 개성 후보";
+    return "연결과 역할 보정 점수가 낮아 추천 후순위로 남은 장수";
+  }
+
   function renderUnassignedSection(section, parent) {
     const ids = sectionMemberIds(section);
     const card = els.template.content.firstElementChild.cloneNode(true);
-    card.querySelector("h3").textContent = `미편성 ${section.title} · ${ids.map(displayName).slice(0, 3).join(", ")}`;
+    card.querySelector("h3").textContent = unassignedSectionLabel(section);
     card.querySelector(".group-score").textContent =
       section.key === "line" ? `${ids.length}명 / ${section.lines.length}라인` : `${ids.length}명`;
+
+    const subtitle = document.createElement("p");
+    subtitle.className = "group-subtitle";
+    subtitle.textContent = unassignedSectionDescription(section);
+    card.querySelector(".group-top").after(subtitle);
 
     const memberList = card.querySelector(".member-list");
     const buff = new Map(ids.map((id) => [id, 0]));
@@ -1986,32 +2229,9 @@
     relationList.classList.add("relation-grid");
     const label = document.createElement("div");
     label.className = "section-label";
-    label.textContent = "분류 기준";
+    label.textContent = "분류기준";
     relationList.appendChild(label);
-
-    if (section.key === "line") {
-      for (const line of section.lines) {
-        const metrics = groupMetrics(line.ids);
-        const lineOrder = new Map(line.ids.map((id, index) => [id, index]));
-        const edges = metrics.edges.sort(
-          (a, b) =>
-            lineOrder.get(a.a) - lineOrder.get(b.a) ||
-            lineOrder.get(a.b) - lineOrder.get(b.b) ||
-            b.value - a.value,
-        );
-        if (!edges.length) {
-          relationList.appendChild(relationNote(line.ids.map(displayName).join(" + ")));
-        } else {
-          for (const edge of edges) relationList.appendChild(relationLine(edge));
-        }
-      }
-    } else if (section.key === "strong") {
-      relationList.appendChild(relationNote("능력치/개성 기준으로 편성 가치가 높은 단독 후보"));
-    } else if (section.key === "support") {
-      relationList.appendChild(relationNote("보좌/응원/악주 계열 보조 개성 후보"));
-    } else {
-      relationList.appendChild(relationNote("-"));
-    }
+    relationList.appendChild(relationNote("-"));
 
     parent.appendChild(card);
   }
@@ -2055,7 +2275,7 @@
       node.className = "empty-state";
       node.textContent = totalAvailable
         ? "현재 필터 조건에 맞는 의형제/결혼 보정 후보가 없습니다."
-        : "v2 기준으로 추천할 의형제/결혼 보정 후보를 찾지 못했습니다.";
+        : "v1.2 기준으로 추천할 의형제/결혼 보정 후보를 찾지 못했습니다.";
       els.oathResults.appendChild(node);
       return;
     }
@@ -2067,12 +2287,15 @@
       const top = document.createElement("div");
       top.className = "group-top";
       const title = document.createElement("h3");
-      title.textContent = `${index + 1}추천 · ${recommendation.kind === "marriage" ? "결혼" : "의형제"} 보정`;
+      title.textContent = `${index + 1}추천 · ${recommendation.kind === "marriage" ? "결혼(미혼 가정)" : "의형제"} 보정`;
       const score = document.createElement("span");
       score.className = "group-score";
       score.textContent = recommendation.priorityLabel;
       top.append(title, score);
       card.appendChild(top);
+
+      const summaryFrame = document.createElement("div");
+      summaryFrame.className = "recommendation-frame";
 
       const oathList = document.createElement("div");
       oathList.className = "oath-summary";
@@ -2081,8 +2304,7 @@
       oathLabel.textContent = "추천 조합";
       oathList.appendChild(oathLabel);
       appendRec(oathList, recommendation.ids.map(displayName).join(" + "));
-      appendRec(oathList, recommendation.reason);
-      card.appendChild(oathList);
+      summaryFrame.appendChild(oathList);
 
       const metaList = document.createElement("div");
       metaList.className = "change-badges";
@@ -2098,7 +2320,7 @@
       metaLabel.className = "section-label";
       metaLabel.textContent = "추천 기준";
       metaSection.append(metaLabel, metaList);
-      card.appendChild(metaSection);
+      summaryFrame.appendChild(metaSection);
 
       const changeList = document.createElement("div");
       changeList.className = "change-badges";
@@ -2133,11 +2355,12 @@
         changeLabel.className = "section-label";
         changeLabel.textContent = "예상 변화";
         changeSection.append(changeLabel, changeList);
-        card.appendChild(changeSection);
+        summaryFrame.appendChild(changeSection);
       }
+      card.appendChild(summaryFrame);
 
       const formationList = document.createElement("div");
-      formationList.className = "formation-preview-list";
+      formationList.className = "formation-preview-list recommendation-frame";
       const formationLabel = document.createElement("div");
       formationLabel.className = "section-label";
       formationLabel.textContent = "예상 편성";
@@ -2182,9 +2405,6 @@
     if (planOptions.mode === "count" && groups.length !== planOptions.targetCount) {
       warnings.push(`목표 ${planOptions.targetCount}집단에 최대한 가깝게 ${groups.length}집단으로 편성했습니다.`);
     }
-    if (unassigned.length) {
-      warnings.push(`편성 제한상 ${unassigned.length}명은 기본 편성에서 미편성으로 남깁니다.`);
-    }
     const total = totalScore(groups);
     const allOathRecommendations =
       activeResultTab === "oath" ? recommendOathSets(ids, planOptions, plan, RECOMMENDATION_LIMIT * 4) : [];
@@ -2207,7 +2427,7 @@
     setResultTab(activeResultTab);
     if (activeResultTab === "oath") {
       els.resultTitle.textContent = "의형제/결혼 추천";
-      els.resultMeta.textContent = `${ids.length}명 · 추천 ${oathRecommendations.length}/${allOathRecommendations.length}건 · v2 보정 후보`;
+      els.resultMeta.textContent = `${ids.length}명 · 추천 ${oathRecommendations.length}/${allOathRecommendations.length}건 · v1.2 보정 후보`;
       els.scoreBadge.textContent = `${oathRecommendations.length}건`;
     } else {
       els.resultTitle.textContent = "보유 장수 편성 결과";
@@ -2291,9 +2511,9 @@
     const relationList = card.querySelector(".relation-list");
     relationList.classList.add("path-relation-list");
     const label = document.createElement("div");
-    label.className = "section-label";
+    label.className = "section-label path-section-label";
     label.textContent = "연결 근거";
-    relationList.appendChild(label);
+    relationList.before(label);
 
     if (!pathRows.length) {
       const empty = document.createElement("div");
@@ -2374,22 +2594,37 @@
         if (mode === "roster" && activeResultTab === "oath") renderRoster();
       });
     }
-    els.sampleRoster.addEventListener("click", () => {
-      els.rosterInput.value = SAMPLE_ROSTER;
-      els.coreInput.value = "";
-      updateRosterLimitControls();
-      updateDuplicateSelectors();
-      renderRoster();
+    for (const button of els.sampleRosterButtons) {
+      button.addEventListener("click", () => {
+        const sample = REGRESSION_SAMPLES[button.dataset.sampleRoster];
+        if (!sample) return;
+        els.rosterInput.value = sample.text;
+        els.coreInput.value = "";
+        rosterLimitValues.groupCount = sample.groupCount;
+        rosterLimitValues.maxSize = sample.maxSize;
+        els.groupCount.value = sample.groupCount;
+        els.maxSize.value = sample.maxSize;
+        updateRosterLimitControls();
+        updateDuplicateSelectors();
+        renderRoster();
+      });
+    }
+    els.themeToggle?.addEventListener("click", () => {
+      const current = document.documentElement?.dataset?.theme === "dark" ? "dark" : "light";
+      setTheme(current === "dark" ? "light" : "dark", true);
     });
-    els.runButton.addEventListener("click", () => {
-      if (mode === "roster") renderRoster();
-      else renderSingle();
-    });
+    for (const button of els.runButtons) {
+      button.addEventListener("click", () => {
+        if (mode === "roster") renderRoster();
+        else renderSingle();
+      });
+    }
   }
 
   function init() {
     setupGraph();
     setupDatalist();
+    initTheme();
     bindEvents();
     els.rosterInput.value = "";
     els.coreInput.value = "";

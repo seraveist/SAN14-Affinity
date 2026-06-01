@@ -21,7 +21,6 @@ const requiredIds = [
   "maxSize",
   "duplicateSelectors",
   "hopDepth",
-  "sampleRoster",
   "runButton",
   "resultTitle",
   "resultMeta",
@@ -35,6 +34,9 @@ const requiredIds = [
 ];
 
 const missingIds = requiredIds.filter((id) => !html.includes(`id="${id}"`));
+const missingSampleButtons = ["cao", "liu", "sun", "yuan"].filter(
+  (key) => !html.includes(`data-sample-roster="${key}"`),
+);
 const missingFiles = ["./styles.css", "./data.js", "./app.js"].filter((path) => !html.includes(path));
 const positiveEdges = data.edges.filter((edge) => ["☆", "◎", "○"].includes(edge.relation)).length;
 const officerCount = Object.keys(data.officers).length;
@@ -45,6 +47,7 @@ const result = {
   officerCount,
   positiveEdges,
   missingIds,
+  missingSampleButtons,
   missingFiles,
   missingNames,
   appBytes: app.length,
@@ -52,6 +55,13 @@ const result = {
 
 console.log(JSON.stringify(result, null, 2));
 
-if (missingIds.length || missingFiles.length || missingNames.length || officerCount < 1000 || positiveEdges < 4000) {
+if (
+  missingIds.length ||
+  missingSampleButtons.length ||
+  missingFiles.length ||
+  missingNames.length ||
+  officerCount < 1000 ||
+  positiveEdges < 4000
+) {
   process.exitCode = 1;
 }

@@ -4,16 +4,25 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>삼국지14 친애 편성기</title>
-    <link rel="stylesheet" href="./styles.css?v=20260531-v13" />
+    <script>
+      (() => {
+        const stored = localStorage.getItem("san14-theme");
+        const systemDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
+        document.documentElement.dataset.theme = stored || (systemDark ? "dark" : "light");
+      })();
+    </script>
+    <link rel="stylesheet" href="./styles.css?v=20260601-v31" />
   </head>
   <body>
     <main class="app-shell">
       <aside class="control-pane">
         <div class="brand">
           <span class="brand-mark">14</span>
-          <div>
+          <div class="brand-copy">
             <h1>삼국지14 친애 편성기</h1>
+            <p>v1.2 편성 기준</p>
           </div>
+          <button id="themeToggle" class="theme-toggle" type="button" aria-label="다크 테마로 변경">☾</button>
         </div>
 
         <div class="segmented" role="tablist" aria-label="분석 모드">
@@ -21,9 +30,21 @@
           <button class="segment" type="button" data-mode="single">중심 분석</button>
         </div>
 
+        <details class="sample-box" data-panel="roster">
+          <summary>샘플</summary>
+          <div class="sample-rosters" aria-label="회귀 샘플">
+            <button class="ghost-button sample-button" type="button" data-sample-roster="cao">조조계</button>
+            <button class="ghost-button sample-button" type="button" data-sample-roster="liu">유비계</button>
+            <button class="ghost-button sample-button" type="button" data-sample-roster="sun">손권계</button>
+            <button class="ghost-button sample-button" type="button" data-sample-roster="yuan">원소계</button>
+          </div>
+        </details>
+
         <section class="form-section" data-panel="roster">
           <label for="rosterInput">보유 장수</label>
           <textarea id="rosterInput" spellcheck="false" autocomplete="off"></textarea>
+          <label for="coreInput">코어 고정</label>
+          <textarea id="coreInput" class="compact-textarea" spellcheck="false" autocomplete="off"></textarea>
           <div class="roster-limits">
             <label class="limit-field" for="groupCount">
               <span>목표 집단 수</span>
@@ -33,10 +54,8 @@
               <span>집단 상한</span>
               <input id="maxSize" type="number" min="3" max="30" value="20" />
             </label>
-            <button id="sampleRoster" class="ghost-button" type="button">샘플</button>
+            <button id="runButton" class="run-button roster-run-button" type="button" data-run-action>분석</button>
           </div>
-          <label for="coreInput">코어 고정</label>
-          <textarea id="coreInput" class="compact-textarea" spellcheck="false" autocomplete="off"></textarea>
           <div id="duplicateSelectors" class="duplicate-selectors hidden"></div>
         </section>
 
@@ -48,11 +67,10 @@
             <input id="hopDepth" type="number" min="1" max="4" value="4" />
             <span class="unit">단계</span>
           </div>
+          <button class="run-button" type="button" data-run-action>분석</button>
         </section>
 
         <datalist id="officerNames"></datalist>
-
-        <button id="runButton" class="run-button" type="button">분석</button>
       </aside>
 
       <section class="result-pane">
@@ -103,6 +121,6 @@
     </template>
 
     <script src="./data.js?v=20260531-v12"></script>
-    <script src="./app.js?v=20260601-v19"></script>
+    <script src="./app.js?v=20260601-v31"></script>
   </body>
 </html>
