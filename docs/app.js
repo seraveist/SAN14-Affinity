@@ -1525,7 +1525,13 @@
       if (seen.has(signature)) continue;
       seen.add(signature);
       const row = hydrateRecommendation(spec, ids, planOptions, basePlan);
-      if (row.stats.unassignedCount <= row.baseStats.unassignedCount && !isRecommendationTooUnstable(row)) rows.push(row);
+      if (
+        row.stats.unassignedCount <= row.baseStats.unassignedCount &&
+        recommendationKeepsSourceWithAnchor(row) &&
+        !isRecommendationTooUnstable(row)
+      ) {
+        rows.push(row);
+      }
     }
 
     return rows.sort(compareRecommendationRows).slice(0, limit);
@@ -1912,6 +1918,15 @@
     return groupA !== undefined && groupA >= 0 && groupA === groupB;
   }
 
+  function recommendationKeepsSourceWithAnchor(row) {
+    const groupMap = formationMemberIndex(row.plan.groups || [], row.plan.unassigned || []);
+    const anchorGroup = groupMap.get(row.anchorId);
+    if (anchorGroup === undefined || anchorGroup < 0) return false;
+
+    const sourceIds = [...new Set(row.sourceIds || [])].filter((id) => id !== row.anchorId);
+    return sourceIds.length ? sourceIds.every((id) => groupMap.get(id) === anchorGroup) : true;
+  }
+
   function recommendationStability(basePlan, nextPlan) {
     const baseGroups = basePlan.groups || [];
     const nextIndex = formationMemberIndex(nextPlan.groups || [], nextPlan.unassigned || []);
@@ -2093,20 +2108,33 @@
 
   function affinityLine(center, row) {
     const relation = row.relation;
-    const source = relation.arrow === "<-" ? row.id : center;
-    const target = relation.arrow === "<-" ? center : row.id;
-    const arrow = relation.arrow === "<->" ? "↔" : "→";
+    const arrow = relation.arrow === "<->" ? "↔" : relation.arrow === "<-" ? "←" : "→";
     const node = document.createElement("div");
     node.className = `relation-line relation-card affinity-card ${REL_CLASS[relation.label]}`;
-    node.innerHTML = `<span class="relation-name">${displayName(source)}</span><span class="relation-symbol">${relation.label}</span><span class="affinity-arrow">${arrow}</span><span class="relation-name relation-target">${displayName(target)}</span>`;
-    node.title = `${displayName(source)} ${relation.label}${arrow} ${displayName(target)}`;
+    node.innerHTML = `<span class="relation-name">${displayName(center)}</span><span class="relation-symbol">${relation.label}</span><span class="affinity-arrow">${arrow}</span><span class="relation-name relation-target">${displayName(row.id)}</span>`;
+    node.title = `${displayName(center)} ${relation.label}${arrow} ${displayName(row.id)}`;
     return node;
+  }
+
+  function scoreToneClass(score) {
+    if (score >= 2500) return "tone-score-top";
+    if (score >= 2000) return "tone-score-high";
+    if (score >= 1500) return "tone-score-mid";
+    return "tone-score-low";
+  }
+
+  function unassignedToneClass(key) {
+    if (key === "strong") return "tone-strong";
+    if (key === "support") return "tone-support";
+    if (key === "line") return "tone-line";
+    return "tone-unassigned";
   }
 
   function renderGroup(title, group, options = {}) {
     const metrics = groupMetrics(group);
     const card = els.template.content.firstElementChild.cloneNode(true);
     const parent = options.parent || els.results;
+    card.classList.add(options.toneClass || scoreToneClass(metrics.score));
     card.querySelector("h3").textContent = title;
     card.querySelector(".group-score").textContent = `${group.length}명 | ${metrics.score}`;
 
@@ -2162,36 +2190,10 @@
     return true;
   }
 
-  const COMPACT_RECOMMENDATION_LABELS = new Map([
-    ["후보 라인", "후보"],
-    ["후보 집단 병합", "후보"],
-    ["소규모 라인", "소규모"],
-    ["소규모 라인 병합", "소규모"],
-    ["강력 단독", "단독"],
-    ["강력 단독 투입", "단독"],
-    ["보조 후보", "보조"],
-    ["일반 미편성", "미편성"],
-    ["미편성 구제", "미편성"],
-    ["범위 버프 보강", "보조"],
-    ["응원/악주 여무장", "보조"],
-  ]);
-
-  function compactRecommendationLabel(text) {
-    return COMPACT_RECOMMENDATION_LABELS.get(text) || text;
-  }
-
-  function appendStaticBadge(parent, text) {
-    const badge = document.createElement("span");
-    badge.className = "change-badge";
-    badge.textContent = text;
-    parent.appendChild(badge);
-    return true;
-  }
-
   function renderFormationPreviewCard(group, index, parent) {
     const metrics = groupMetrics(group);
     const card = document.createElement("div");
-    card.className = "formation-preview-card";
+    card.className = `formation-preview-card ${scoreToneClass(metrics.score)}`;
 
     const top = document.createElement("div");
     top.className = "group-top";
@@ -2231,6 +2233,7 @@
   function renderUnassignedSection(section, parent) {
     const ids = sectionMemberIds(section);
     const card = els.template.content.firstElementChild.cloneNode(true);
+    card.classList.add(unassignedToneClass(section.key));
     card.querySelector("h3").textContent = unassignedSectionLabel(section);
     card.querySelector(".group-score").textContent =
       section.key === "line" ? `${ids.length}명 / ${section.lines.length}라인` : `${ids.length}명`;
@@ -2263,13 +2266,13 @@
   function renderUnassignedPreviewSection(section, parent) {
     const ids = sectionMemberIds(section);
     const card = document.createElement("div");
-    card.className = "formation-preview-card";
+    card.className = `formation-preview-card ${unassignedToneClass(section.key)}`;
 
     const top = document.createElement("div");
     top.className = "group-top";
     const title = document.createElement("h3");
     const label = unassignedSectionLabel(section);
-    title.textContent = `${label === "미편성" ? "미편성" : `미편성 ${label}`} · ${ids
+    title.textContent = `${label} · ${ids
       .map(displayName)
       .slice(0, 3)
       .join(", ")}`;
@@ -2311,12 +2314,7 @@
       top.className = "group-top";
       const title = document.createElement("h3");
       title.textContent = `${index + 1}추천 · ${recommendation.kind === "marriage" ? "결혼(미혼 가정)" : "의형제"} 보정`;
-      const compactPriorityLabel = compactRecommendationLabel(recommendation.priorityLabel);
-      const compactSourceClass = compactRecommendationLabel(recommendation.sourceClass);
-      const score = document.createElement("span");
-      score.className = "group-score";
-      score.textContent = compactPriorityLabel;
-      top.append(title, score);
+      top.append(title);
       card.appendChild(top);
 
       const summaryFrame = document.createElement("div");
@@ -2330,22 +2328,6 @@
       oathList.appendChild(oathLabel);
       appendRec(oathList, recommendation.ids.map(displayName).join(" + "));
       summaryFrame.appendChild(oathList);
-
-      const metaList = document.createElement("div");
-      metaList.className = "change-badges";
-      appendStaticBadge(metaList, recommendation.kind === "marriage" ? "결혼" : "의형제");
-      appendStaticBadge(metaList, compactPriorityLabel);
-      if (compactSourceClass && compactSourceClass !== compactPriorityLabel) {
-        appendStaticBadge(metaList, compactSourceClass);
-      }
-      for (const badge of recommendation.badges) appendStaticBadge(metaList, compactRecommendationLabel(badge));
-      const metaSection = document.createElement("div");
-      metaSection.className = "recommendations";
-      const metaLabel = document.createElement("div");
-      metaLabel.className = "section-label";
-      metaLabel.textContent = "추천 기준";
-      metaSection.append(metaLabel, metaList);
-      summaryFrame.appendChild(metaSection);
 
       const changeList = document.createElement("div");
       changeList.className = "change-badges";
@@ -2415,7 +2397,7 @@
     });
     warnings.push(...duplicateState.warnings);
     if (!ids.length) {
-      renderEmpty("분석할 장수를 입력하세요.");
+      renderEmpty("보유 장수를 입력하세요.");
       return;
     }
 
@@ -2466,7 +2448,7 @@
     setResultTabsVisible(false);
     const { ids, warnings } = resolveNames([els.centerInput.value.trim()]);
     if (!ids.length) {
-      renderEmpty("중심 장수를 입력하세요.");
+      renderEmpty("분석할 장수를 입력하세요.");
       return;
     }
 
@@ -2494,7 +2476,7 @@
     renderPathCard(`집단 추천 · ${displayName(center)}`, groupPaths.slice(0, 50));
 
     renderWarnings(warnings);
-    els.resultTitle.textContent = "중심 장수 분석 결과";
+    els.resultTitle.textContent = "단일 장수 분석 결과";
     els.resultMeta.textContent = `${displayName(center)} · ${depth}단계 · ☆/◎/○ 포함`;
     els.scoreBadge.textContent = `${groupPaths.length}`;
   }
@@ -2577,6 +2559,20 @@
     const parent = mode === "roster" && activeResultTab === "oath" ? els.oathResults : els.results;
     parent.appendChild(node);
     setResultTab(mode === "roster" ? activeResultTab : "formation");
+    setEmptyResultHeader();
+  }
+
+  function setEmptyResultHeader() {
+    if (mode === "single") {
+      els.resultTitle.textContent = "단일 장수 분석 결과";
+      els.resultMeta.textContent = "분석할 장수를 입력하고 분석하세요.";
+    } else if (activeResultTab === "oath") {
+      els.resultTitle.textContent = "의형제/결혼 추천";
+      els.resultMeta.textContent = "보유 장수를 입력하고 분석하세요.";
+    } else {
+      els.resultTitle.textContent = "보유 장수 편성 결과";
+      els.resultMeta.textContent = "보유 장수를 입력하고 분석하세요.";
+    }
     els.scoreBadge.textContent = "READY";
   }
 

@@ -160,9 +160,7 @@ function unassignedSummary(api, unassigned, groups, ids) {
 function recommendationSummary(api, recommendation) {
   return {
     kind: recommendation.kind === "marriage" ? "결혼(미혼 가정)" : "의형제",
-    label: recommendation.priorityLabel,
     combo: recommendation.ids.map(api.displayName).join(" + "),
-    badges: recommendation.badges,
     stability: recommendation.stability
       ? {
           penalty: recommendation.stability.penalty,
@@ -241,10 +239,7 @@ function summarize(results) {
       if (sample.recommendations.length) {
         lines.push(
           `- 추천: ${sample.recommendations
-            .map((row) => {
-              const badges = row.badges?.length ? ` [${row.badges.join(", ")}]` : "";
-              return `${row.kind}(${row.label}) ${row.combo}${badges}`;
-            })
+            .map((row) => `${row.kind} ${row.combo}`)
             .join(" / ")}`,
         );
       }

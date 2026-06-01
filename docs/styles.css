@@ -25,6 +25,14 @@
   --green: #5f8057;
   --gold: #9a7423;
   --gold-soft: #fff5d7;
+  --accent-score-top: #2e7169;
+  --accent-score-high: #5f8057;
+  --accent-score-mid: #9a7423;
+  --accent-score-low: #727a70;
+  --accent-line: #9a7423;
+  --accent-strong: #a54438;
+  --accent-support: #5f8057;
+  --accent-unassigned: #727a70;
   --shadow: 0 18px 42px rgba(30, 36, 29, 0.12);
   --shadow-soft: 0 1px 2px rgba(30, 36, 29, 0.08);
   --radius: 8px;
@@ -49,6 +57,14 @@ html[data-theme="dark"] {
   --green: #94b67a;
   --gold: #d5b764;
   --gold-soft: rgba(213, 183, 100, 0.14);
+  --accent-score-top: #68afa5;
+  --accent-score-high: #94b67a;
+  --accent-score-mid: #d5b764;
+  --accent-score-low: #949b8e;
+  --accent-line: #d5b764;
+  --accent-strong: #dd7569;
+  --accent-support: #94b67a;
+  --accent-unassigned: #949b8e;
   --shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
   --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
@@ -621,11 +637,12 @@ h2 {
 }
 
 .group-card {
+  --card-accent: var(--accent-score-low);
   position: relative;
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--line-strong);
-  border-top: 3px solid var(--blue);
+  border-top: 3px solid var(--card-accent);
   border-radius: var(--radius);
   background: var(--panel);
   padding: 13px 14px 14px;
@@ -634,6 +651,38 @@ h2 {
 
 html[data-theme="dark"] .group-card {
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
+}
+
+.tone-score-top {
+  --card-accent: var(--accent-score-top);
+}
+
+.tone-score-high {
+  --card-accent: var(--accent-score-high);
+}
+
+.tone-score-mid {
+  --card-accent: var(--accent-score-mid);
+}
+
+.tone-score-low {
+  --card-accent: var(--accent-score-low);
+}
+
+.tone-line {
+  --card-accent: var(--accent-line);
+}
+
+.tone-strong {
+  --card-accent: var(--accent-strong);
+}
+
+.tone-support {
+  --card-accent: var(--accent-support);
+}
+
+.tone-unassigned {
+  --card-accent: var(--accent-unassigned);
 }
 
 .group-top {
@@ -706,6 +755,11 @@ h3 {
 .group-card > .relation-list {
   padding-top: 10px;
   border-top: 1px solid var(--line);
+}
+
+.group-card > .relation-list.affinity-list {
+  padding-top: 0;
+  border-top: 0;
 }
 
 .section-label {
@@ -845,8 +899,9 @@ h3 {
 }
 
 .formation-preview-card {
+  --card-accent: var(--line-strong);
   border: 1px solid var(--line);
-  border-left: 3px solid var(--line-strong);
+  border-left: 3px solid var(--card-accent);
   border-radius: 7px;
   background: var(--panel);
   padding: 9px 10px;
@@ -884,7 +939,7 @@ h3 {
 }
 
 #oathResults > .group-card {
-  border-top-color: var(--green);
+  --card-accent: var(--accent-support);
 }
 
 #oathResults > .group-card > .recommendation-frame:not(.formation-preview-list) {
