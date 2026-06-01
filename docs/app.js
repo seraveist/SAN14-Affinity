@@ -18,7 +18,7 @@
     liu: {
       groupCount: 4,
       maxSize: 20,
-      text: "유비 관우 장비 손건 미축 미방 감씨 미씨 조운 주창 진도 요화 제갈량 황월영 방통 서서 위연 황충 마초 마대 마운록 장임 황권 엄안 뇌동 법정 오란 오의 오반 유봉 관평 관색 관흥 관은병 장포 하후씨 장씨",
+      text: "유비 관우 장비 손건 미축 미방 감씨 미씨 조운 주창 진도 요화 제갈량 황월영 방통 서서 위연 황충 마초 마대 마운록 장임 황권 엄안 뇌동 법정 오란 오의 오반 유봉 관평 관색 관흥 관은병 장포 하후씨 장씨 강유 왕보 조루",
     },
     sun: {
       groupCount: 4,
@@ -2161,6 +2161,24 @@
     return true;
   }
 
+  const COMPACT_RECOMMENDATION_LABELS = new Map([
+    ["후보 라인", "후보"],
+    ["후보 집단 병합", "후보"],
+    ["소규모 라인", "소규모"],
+    ["소규모 라인 병합", "소규모"],
+    ["강력 단독", "단독"],
+    ["강력 단독 투입", "단독"],
+    ["보조 후보", "보조"],
+    ["일반 미편성", "미편성"],
+    ["미편성 구제", "미편성"],
+    ["범위 버프 보강", "보조"],
+    ["응원/악주 여무장", "보조"],
+  ]);
+
+  function compactRecommendationLabel(text) {
+    return COMPACT_RECOMMENDATION_LABELS.get(text) || text;
+  }
+
   function appendStaticBadge(parent, text) {
     const badge = document.createElement("span");
     badge.className = "change-badge";
@@ -2249,7 +2267,11 @@
     const top = document.createElement("div");
     top.className = "group-top";
     const title = document.createElement("h3");
-    title.textContent = `미편성 ${section.title} · ${ids.map(displayName).slice(0, 3).join(", ")}`;
+    const label = unassignedSectionLabel(section);
+    title.textContent = `${label === "미편성" ? "미편성" : `미편성 ${label}`} · ${ids
+      .map(displayName)
+      .slice(0, 3)
+      .join(", ")}`;
     const score = document.createElement("span");
     score.className = "group-score";
     score.textContent = section.key === "line" ? `${ids.length}명 / ${section.lines.length}라인` : `${ids.length}명`;
@@ -2288,9 +2310,11 @@
       top.className = "group-top";
       const title = document.createElement("h3");
       title.textContent = `${index + 1}추천 · ${recommendation.kind === "marriage" ? "결혼(미혼 가정)" : "의형제"} 보정`;
+      const compactPriorityLabel = compactRecommendationLabel(recommendation.priorityLabel);
+      const compactSourceClass = compactRecommendationLabel(recommendation.sourceClass);
       const score = document.createElement("span");
       score.className = "group-score";
-      score.textContent = recommendation.priorityLabel;
+      score.textContent = compactPriorityLabel;
       top.append(title, score);
       card.appendChild(top);
 
@@ -2309,11 +2333,11 @@
       const metaList = document.createElement("div");
       metaList.className = "change-badges";
       appendStaticBadge(metaList, recommendation.kind === "marriage" ? "결혼" : "의형제");
-      appendStaticBadge(metaList, recommendation.priorityLabel);
-      if (recommendation.sourceClass && recommendation.sourceClass !== recommendation.priorityLabel) {
-        appendStaticBadge(metaList, recommendation.sourceClass);
+      appendStaticBadge(metaList, compactPriorityLabel);
+      if (compactSourceClass && compactSourceClass !== compactPriorityLabel) {
+        appendStaticBadge(metaList, compactSourceClass);
       }
-      for (const badge of recommendation.badges) appendStaticBadge(metaList, badge);
+      for (const badge of recommendation.badges) appendStaticBadge(metaList, compactRecommendationLabel(badge));
       const metaSection = document.createElement("div");
       metaSection.className = "recommendations";
       const metaLabel = document.createElement("div");
@@ -2607,6 +2631,7 @@
         updateRosterLimitControls();
         updateDuplicateSelectors();
         renderRoster();
+        button.closest(".preset-popover")?.removeAttribute("open");
       });
     }
     els.themeToggle?.addEventListener("click", () => {

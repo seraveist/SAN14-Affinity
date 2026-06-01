@@ -11,18 +11,17 @@
         document.documentElement.dataset.theme = stored || (systemDark ? "dark" : "light");
       })();
     </script>
-    <link rel="stylesheet" href="./styles.css?v=20260601-v32" />
+    <link rel="stylesheet" href="./styles.css?v=20260601-v34" />
   </head>
   <body>
-    <main class="app-shell">
-      <aside class="control-pane">
+    <main class="lab-shell">
+      <header class="topbar">
         <div class="brand">
           <span class="brand-mark">14</span>
           <div class="brand-copy">
             <h1>삼국지14 친애 편성기</h1>
             <p>v1.2 편성 기준</p>
           </div>
-          <button id="themeToggle" class="theme-toggle" type="button" aria-label="다크 테마로 변경">☾</button>
         </div>
 
         <div class="segmented" role="tablist" aria-label="분석 모드">
@@ -30,48 +29,65 @@
           <button class="segment" type="button" data-mode="single">중심 분석</button>
         </div>
 
-        <details class="sample-box" data-panel="roster">
-          <summary>샘플</summary>
-          <div class="sample-rosters" aria-label="회귀 샘플">
-            <button class="ghost-button sample-button" type="button" data-sample-roster="cao">조조계</button>
-            <button class="ghost-button sample-button" type="button" data-sample-roster="liu">유비계</button>
-            <button class="ghost-button sample-button" type="button" data-sample-roster="sun">손권계</button>
-            <button class="ghost-button sample-button" type="button" data-sample-roster="yuan">원소계</button>
-          </div>
-        </details>
+        <button id="themeToggle" class="theme-toggle" type="button" aria-label="다크 테마로 변경">☾</button>
+      </header>
 
-        <section class="form-section" data-panel="roster">
-          <label for="rosterInput">보유 장수</label>
-          <textarea id="rosterInput" spellcheck="false" autocomplete="off"></textarea>
-          <label for="coreInput">코어 고정</label>
-          <textarea id="coreInput" class="compact-textarea" spellcheck="false" autocomplete="off"></textarea>
-          <div class="roster-limits">
-            <label class="limit-field" for="groupCount">
-              <span>목표 집단 수</span>
-              <input id="groupCount" type="number" min="1" value="4" />
-            </label>
-            <label class="limit-field" for="maxSize">
-              <span>집단 상한</span>
-              <input id="maxSize" type="number" min="3" max="30" value="20" />
-            </label>
-            <button id="runButton" class="run-button roster-run-button" type="button" data-run-action>분석</button>
+      <section class="control-workbench" aria-label="입력 패널">
+        <section class="form-section roster-panel" data-panel="roster">
+          <div class="input-card roster-entry">
+            <div class="input-card-header">
+              <label for="rosterInput">보유 장수</label>
+              <details class="preset-popover">
+                <summary>장수 프리셋</summary>
+                <div class="preset-panel" role="group" aria-label="장수 프리셋">
+                  <span class="preset-title">장수 프리셋</span>
+                  <div class="sample-rosters">
+                    <button class="ghost-button sample-button" type="button" data-sample-roster="cao">조조</button>
+                    <button class="ghost-button sample-button" type="button" data-sample-roster="liu">유비</button>
+                    <button class="ghost-button sample-button" type="button" data-sample-roster="sun">손권</button>
+                    <button class="ghost-button sample-button" type="button" data-sample-roster="yuan">원소</button>
+                  </div>
+                </div>
+              </details>
+            </div>
+            <textarea id="rosterInput" spellcheck="false" autocomplete="off"></textarea>
           </div>
+
+          <div class="input-card roster-options">
+            <label for="coreInput">코어 고정</label>
+            <textarea id="coreInput" class="compact-textarea" spellcheck="false" autocomplete="off"></textarea>
+            <div class="roster-limits">
+              <label class="limit-field" for="groupCount">
+                <span>목표 집단 수</span>
+                <input id="groupCount" type="number" min="1" value="4" />
+              </label>
+              <label class="limit-field" for="maxSize">
+                <span>집단 상한</span>
+                <input id="maxSize" type="number" min="3" max="30" value="20" />
+              </label>
+              <button id="runButton" class="run-button roster-run-button" type="button" data-run-action>분석</button>
+            </div>
+          </div>
+
           <div id="duplicateSelectors" class="duplicate-selectors hidden"></div>
         </section>
 
-        <section class="form-section hidden" data-panel="single">
-          <label for="centerInput">중심 장수</label>
-          <input id="centerInput" list="officerNames" autocomplete="off" />
-          <div class="inline-controls">
-            <label for="hopDepth">탐색</label>
-            <input id="hopDepth" type="number" min="1" max="4" value="4" />
-            <span class="unit">단계</span>
+        <section class="form-section single-panel hidden" data-panel="single">
+          <div class="input-card single-entry">
+            <div class="single-label-row">
+              <label for="centerInput">중심 장수</label>
+              <label for="hopDepth">탐색 단계</label>
+            </div>
+            <div class="single-row">
+              <input id="centerInput" list="officerNames" autocomplete="off" />
+              <input id="hopDepth" type="number" min="1" max="4" value="4" />
+              <button class="run-button" type="button" data-run-action>분석</button>
+            </div>
           </div>
-          <button class="run-button" type="button" data-run-action>분석</button>
         </section>
 
         <datalist id="officerNames"></datalist>
-      </aside>
+      </section>
 
       <section class="result-pane">
         <div class="result-header">
@@ -81,10 +97,12 @@
           </div>
           <div id="scoreBadge" class="score-badge">READY</div>
         </div>
+
         <div id="resultTabs" class="result-tabs" role="tablist" aria-label="결과 보기">
           <button class="result-tab active" type="button" data-result-tab="formation">편성 결과</button>
           <button class="result-tab" type="button" data-result-tab="oath">의형제/결혼 추천</button>
         </div>
+
         <div id="recommendationFilters" class="recommendation-filters hidden" aria-label="추천 필터">
           <label class="recommendation-filter">
             <input type="checkbox" data-rec-filter="oath" checked />
@@ -103,6 +121,7 @@
             <span>응원/악주 보강</span>
           </label>
         </div>
+
         <div id="warnings" class="warnings"></div>
         <div id="results" class="results"></div>
         <div id="oathResults" class="results hidden"></div>
@@ -121,6 +140,6 @@
     </template>
 
     <script src="./data.js?v=20260531-v12"></script>
-    <script src="./app.js?v=20260601-v32"></script>
+    <script src="./app.js?v=20260601-v34"></script>
   </body>
 </html>
