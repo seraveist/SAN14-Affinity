@@ -882,6 +882,35 @@ html[data-theme="dark"] .member-chip.is-hovered {
   box-shadow: 0 5px 14px rgba(0, 0, 0, 0.28);
 }
 
+.member-chip.is-group-related {
+  border-color: color-mix(in srgb, var(--card-accent) 82%, var(--line));
+  background:
+    linear-gradient(
+      0deg,
+      color-mix(in srgb, var(--card-accent) 14%, transparent),
+      color-mix(in srgb, var(--card-accent) 14%, transparent)
+    ),
+    var(--panel);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--card-accent) 18%, transparent),
+    0 4px 10px rgba(30, 36, 29, 0.12);
+  color: var(--ink);
+  transform: translateY(-1px);
+}
+
+html[data-theme="dark"] .member-chip.is-group-related {
+  background:
+    linear-gradient(
+      0deg,
+      color-mix(in srgb, var(--card-accent) 18%, transparent),
+      color-mix(in srgb, var(--card-accent) 18%, transparent)
+    ),
+    var(--panel);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--card-accent) 22%, transparent),
+    0 4px 12px rgba(0, 0, 0, 0.24);
+}
+
 .member-chip.is-cross-related {
   border-color: color-mix(in srgb, var(--accent-cross-related) 78%, var(--line));
   background:

@@ -2319,9 +2319,16 @@
     chip.classList.add("is-hovered");
     card.classList.add("has-member-hover");
     const officerId = chip.dataset.officerId;
+    const officerNumber = Number(officerId);
     for (const line of card.querySelectorAll(".relation-line[data-a][data-b]")) {
       const related = line.dataset.a === officerId || line.dataset.b === officerId;
       line.classList.toggle("is-related", related);
+    }
+
+    for (const groupChip of card.querySelectorAll(".member-chip[data-officer-id]")) {
+      if (groupChip === chip) continue;
+      const groupId = Number(groupChip.dataset.officerId);
+      if (relationBetween(officerNumber, groupId)) groupChip.classList.add("is-group-related");
     }
 
     for (const otherCard of scope.querySelectorAll(".group-card")) {
@@ -2329,7 +2336,7 @@
       let hasCrossRelation = false;
       for (const otherChip of otherCard.querySelectorAll(".member-chip[data-officer-id]")) {
         const otherId = Number(otherChip.dataset.officerId);
-        if (relationBetween(Number(officerId), otherId)) {
+        if (relationBetween(officerNumber, otherId)) {
           hasCrossRelation = true;
           otherChip.classList.add("is-cross-related");
         }
@@ -2339,8 +2346,8 @@
   }
 
   function clearMemberHover(scope) {
-    for (const item of scope.querySelectorAll(".member-chip.is-hovered, .member-chip.is-cross-related")) {
-      item.classList.remove("is-hovered", "is-cross-related");
+    for (const item of scope.querySelectorAll(".member-chip.is-hovered, .member-chip.is-group-related, .member-chip.is-cross-related")) {
+      item.classList.remove("is-hovered", "is-group-related", "is-cross-related");
     }
     for (const item of scope.querySelectorAll(".group-card.has-member-hover, .group-card.has-cross-hover")) {
       item.classList.remove("has-member-hover", "has-cross-hover");
