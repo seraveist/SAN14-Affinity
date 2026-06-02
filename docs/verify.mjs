@@ -16,9 +16,11 @@ vm.runInContext(dataScript, sandbox);
 const data = sandbox.window.SAN14_DATA;
 const requiredIds = [
   "rosterInput",
+  "dexTabs",
   "centerInput",
   "singleSearchField",
   "singleOfficerDropdown",
+  "traitInput",
   "groupCount",
   "maxSize",
   "duplicateSelectors",

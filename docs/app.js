@@ -9,7 +9,7 @@
   const SUPPORT_TRAITS = new Set(["보좌", "응원", "악주"]);
   const TIER_ORDER = { reserve: 0, support: 1, upper: 2, key: 3, core: 4 };
   const THEME_STORAGE_KEY = "san14-theme";
-  const APP_VERSION = "v1.4";
+  const APP_VERSION = "v1.4.2";
   const STAT_FIELDS = [
     ["leadership", "통솔"],
     ["war", "무력"],
@@ -18,6 +18,167 @@
     ["charm", "매력"],
   ];
   const FORMATION_ORDER = ["어린", "봉시", "안행", "학익", "방원", "장사", "추행", "정란", "충차", "투석"];
+  const TRAIT_ORDER = [
+    "간웅",
+    "효웅",
+    "통찰",
+    "신안",
+    "허실",
+    "화신",
+    "비장",
+    "탈토",
+    "임재",
+    "신위",
+    "황천",
+    "투장",
+    "확삭",
+    "신장",
+    "복룡",
+    "봉추",
+    "신기",
+    "질주",
+    "소탕",
+    "원시",
+    "견수",
+    "붕벽",
+    "발명",
+    "효장",
+    "용장",
+    "강장",
+    "독장",
+    "기략",
+    "궤계",
+    "묘산",
+    "모략",
+    "장구",
+    "구심",
+    "위풍",
+    "악주",
+    "환술",
+    "일심",
+    "앙양",
+    "시상",
+    "노발",
+    "절약",
+    "둔전",
+    "불굴",
+    "태연",
+    "규율",
+    "과감",
+    "침착",
+    "명경",
+    "독려",
+    "동지",
+    "선동",
+    "봉살",
+    "언독",
+    "화공",
+    "해제",
+    "신중",
+    "축성",
+    "영명",
+    "호걸",
+    "단기",
+    "조달",
+    "운반",
+    "사역",
+    "재기",
+    "수전",
+    "산전",
+    "숲전",
+    "오환",
+    "선비",
+    "흉노",
+    "강저",
+    "산월",
+    "남만",
+    "해독",
+    "등갑",
+    "석병",
+    "맹자",
+    "포박",
+    "호위",
+    "혈로",
+    "강운",
+    "지리",
+    "담력",
+    "경국",
+    "재원",
+    "응원",
+    "후위",
+    "명성",
+    "진흥",
+    "법률",
+    "문화",
+    "징세",
+    "농정",
+    "교화",
+    "능리",
+    "모집",
+    "교련",
+    "인맥",
+    "안목",
+    "논객",
+    "책사",
+    "위무",
+    "친오",
+    "친선",
+    "친강",
+    "친월",
+    "친만",
+    "점술",
+    "견뢰",
+    "개수",
+    "의술",
+    "절감",
+    "부호",
+    "미도",
+    "왕좌",
+    "주석",
+    "소욕",
+    "강건",
+    "잠재",
+    "사관",
+    "학자",
+    "동원",
+    "지낭",
+    "조타",
+    "여망",
+    "인정",
+    "진화",
+    "분쇄",
+    "특사",
+    "향도",
+    "간파",
+    "감지",
+    "교사",
+    "강탈",
+    "보좌",
+    "자비",
+    "금강",
+    "감수",
+    "저돌",
+    "소심",
+    "공명",
+    "소침",
+    "낭비",
+    "동요",
+    "주란",
+    "단려",
+    "경솔",
+    "우유",
+    "격분",
+    "직정",
+    "악명",
+    "적도",
+    "오만",
+    "나약",
+    "탐욕",
+    "허약",
+    "경망",
+    "난폭",
+  ];
+  const TRAIT_ORDER_INDEX = new Map(TRAIT_ORDER.map((name, index) => [name, index]));
   const REGRESSION_SAMPLES = {
     cao: {
       groupCount: 4,
@@ -54,11 +215,14 @@
     panels: [...document.querySelectorAll("[data-panel]")],
     resultTabs: document.querySelector("#resultTabs"),
     resultTabButtons: [...document.querySelectorAll(".result-tab")],
+    dexTabButtons: [...document.querySelectorAll(".dex-tab")],
+    dexPanels: [...document.querySelectorAll("[data-dex-panel]")],
     rosterInput: document.querySelector("#rosterInput"),
     coreInput: document.querySelector("#coreInput"),
     centerInput: document.querySelector("#centerInput"),
     singleSearchField: document.querySelector("#singleSearchField"),
     singleOfficerDropdown: document.querySelector("#singleOfficerDropdown"),
+    traitInput: document.querySelector("#traitInput"),
     groupCount: document.querySelector("#groupCount"),
     maxSize: document.querySelector("#maxSize"),
     duplicateSelectors: document.querySelector("#duplicateSelectors"),
@@ -79,6 +243,7 @@
 
   let mode = "roster";
   let activeResultTab = "formation";
+  let activeDexTab = "officer";
   let currentRosterState = null;
   let currentMemberDrag = null;
   let suppressMemberClickUntil = 0;
@@ -2221,6 +2386,16 @@
     return chip;
   }
 
+  function traitOwnerChip(id) {
+    const chip = document.createElement("button");
+    chip.className = "member-chip trait-owner-chip";
+    chip.type = "button";
+    chip.dataset.officerId = String(id);
+    chip.textContent = displayName(id);
+    chip.addEventListener("click", () => openOfficerModal(id));
+    return chip;
+  }
+
   function startMemberDrag(event, chip) {
     if (!currentRosterState) return;
     const id = Number(chip.dataset.officerId);
@@ -2364,8 +2539,76 @@
     return row;
   }
 
+  function relationArrowSymbol(arrow) {
+    if (arrow === "<->") return "↔";
+    if (arrow === "<-") return "←";
+    return "→";
+  }
+
+  function directAffinityRows(center) {
+    return [...(neighbors.get(center)?.keys() || [])]
+      .map((id) => ({ id, relation: relationBetween(center, id) }))
+      .filter((row) => row.relation)
+      .sort((a, b) => {
+        const directionA = a.relation.arrow === "<->" ? 2 : a.relation.arrow === "->" ? 1 : 0;
+        const directionB = b.relation.arrow === "<->" ? 2 : b.relation.arrow === "->" ? 1 : 0;
+        return (
+          b.relation.value - a.relation.value ||
+          directionB - directionA ||
+          primary(b.id) - primary(a.id) ||
+          displayName(a.id).localeCompare(displayName(b.id), "ko")
+        );
+      });
+  }
+
+  function affinityPreview(officerId, currentId) {
+    const popup = document.createElement("div");
+    popup.className = "affinity-preview";
+    popup.setAttribute("role", "tooltip");
+
+    const title = document.createElement("div");
+    title.className = "affinity-preview-title";
+    title.textContent = `친애 목록 · ${displayName(officerId)}`;
+    popup.appendChild(title);
+
+    const rows = directAffinityRows(officerId);
+    if (!rows.length) {
+      const empty = document.createElement("div");
+      empty.className = "affinity-preview-empty";
+      empty.textContent = "친애 없음";
+      popup.appendChild(empty);
+      return popup;
+    }
+
+    const list = document.createElement("div");
+    list.className = "affinity-preview-list";
+    for (const row of rows) {
+      const line = document.createElement("div");
+      line.className = `affinity-preview-line ${REL_CLASS[row.relation.label]}`;
+      if (row.id === currentId) line.classList.add("is-current");
+
+      const symbol = document.createElement("span");
+      symbol.className = "relation-symbol";
+      symbol.textContent = row.relation.label;
+
+      const name = document.createElement("span");
+      name.className = "affinity-preview-name";
+      name.textContent = displayName(row.id);
+
+      const arrow = document.createElement("span");
+      arrow.className = "affinity-arrow";
+      arrow.textContent = relationArrowSymbol(row.relation.arrow);
+
+      line.append(symbol, name, arrow);
+      list.appendChild(line);
+    }
+    popup.appendChild(list);
+    return popup;
+  }
+
   function renderAffinityList(title, center, rows) {
     const card = els.template.content.firstElementChild.cloneNode(true);
+    card.classList.add("affinity-list-card");
     card.querySelector("h3").textContent = title;
     card.querySelector(".group-score").textContent = `${rows.length}명`;
     card.querySelector(".member-list").remove();
@@ -2485,22 +2728,19 @@
     }
     body.appendChild(statsBlock);
 
-    const traitBlock = profileBlock("개성 도감");
+    const traitBlock = profileBlock("보유 개성");
     const traitList = document.createElement("div");
     traitList.className = "trait-dex-list";
     for (const trait of item.traits || []) {
       const row = document.createElement("div");
-      row.className = `trait-dex-row trait-${trait.color || "none"}`;
+      row.className = "trait-dex-row";
       const name = document.createElement("span");
-      name.className = "trait-dex-name";
+      name.className = `trait-name-box trait-${trait.color || "none"}`;
       name.textContent = trait.name;
-      const score = document.createElement("span");
-      score.className = "trait-dex-score";
-      score.textContent = `+${trait.score || 0}`;
       const description = document.createElement("span");
       description.className = "trait-dex-description";
       description.textContent = traitDescription(trait.name) || "설명 없음";
-      row.append(name, score, description);
+      row.append(name, description);
       traitList.appendChild(row);
     }
     traitBlock.appendChild(traitList);
@@ -2586,11 +2826,42 @@
 
   function affinityLine(center, row) {
     const relation = row.relation;
-    const arrow = relation.arrow === "<->" ? "↔" : relation.arrow === "<-" ? "←" : "→";
+    const arrow = relationArrowSymbol(relation.arrow);
     const node = document.createElement("div");
     node.className = `relation-line relation-card affinity-card ${REL_CLASS[relation.label]}`;
-    node.innerHTML = `<span class="relation-name">${displayName(center)}</span><span class="relation-symbol">${relation.label}</span><span class="affinity-arrow">${arrow}</span><span class="relation-name relation-target">${displayName(row.id)}</span>`;
-    node.title = `${displayName(center)} ${relation.label}${arrow} ${displayName(row.id)}`;
+    node.tabIndex = 0;
+    let wasFocusedBeforePointer = false;
+
+    const symbol = document.createElement("span");
+    symbol.className = "relation-symbol";
+    symbol.textContent = relation.label;
+
+    const targetWrap = document.createElement("span");
+    targetWrap.className = "affinity-target-wrap";
+    const target = document.createElement("span");
+    target.className = "relation-name relation-target affinity-target-name";
+    target.textContent = displayName(row.id);
+    targetWrap.append(target, affinityPreview(row.id, center));
+
+    const arrowNode = document.createElement("span");
+    arrowNode.className = "affinity-arrow";
+    arrowNode.textContent = arrow;
+
+    node.append(symbol, targetWrap, arrowNode);
+    node.setAttribute("aria-label", `${relation.label} ${displayName(row.id)} ${arrow}`);
+    node.addEventListener("pointerdown", (event) => {
+      wasFocusedBeforePointer = document.activeElement === node && !event.target.closest(".affinity-preview");
+      if (!wasFocusedBeforePointer) node.classList.remove("is-preview-suppressed");
+    });
+    node.addEventListener("click", (event) => {
+      if (!wasFocusedBeforePointer) return;
+      event.preventDefault();
+      node.blur();
+      node.classList.add("is-preview-suppressed");
+      wasFocusedBeforePointer = false;
+    });
+    node.addEventListener("pointerleave", () => node.classList.remove("is-preview-suppressed"));
+    node.addEventListener("focus", () => node.classList.remove("is-preview-suppressed"));
     return node;
   }
 
@@ -2973,12 +3244,98 @@
     }
   }
 
+  function traitDexRows() {
+    const rows = new Map();
+    for (const [name, description] of Object.entries(DATA.traitDescriptions || {})) {
+      rows.set(name, { name, description, color: "none", owners: [] });
+    }
+    for (const item of officers.values()) {
+      for (const trait of item.traits || []) {
+        if (!rows.has(trait.name)) {
+          rows.set(trait.name, { name: trait.name, description: traitDescription(trait.name), color: "none", owners: [] });
+        }
+        const row = rows.get(trait.name);
+        row.color = trait.color || row.color || "none";
+        row.owners.push(item.id);
+      }
+    }
+    return [...rows.values()]
+      .map((row) => ({
+        ...row,
+        order: TRAIT_ORDER_INDEX.get(row.name) ?? Number.MAX_SAFE_INTEGER,
+        owners: [...new Set(row.owners)].sort(
+          (a, b) => primary(b) - primary(a) || displayName(a).localeCompare(displayName(b), "ko") || a - b,
+        ),
+      }))
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "ko"));
+  }
+
+  function renderTraitDex() {
+    clearResults();
+    setResultTabsVisible(false);
+    const query = normalizeSingleSearch(els.traitInput?.value || "");
+    const rows = traitDexRows().filter((row) => {
+      if (!query) return true;
+      const ownerNames = row.owners.map(displayName).join(" ");
+      return normalizeSingleSearch(`${row.name} ${ownerNames}`).includes(query);
+    });
+
+    if (!rows.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = "검색 결과 없음";
+      els.results.appendChild(empty);
+    } else {
+      const table = document.createElement("div");
+      table.className = "trait-dex-table";
+      const header = document.createElement("div");
+      header.className = "trait-dex-table-row trait-dex-table-header";
+      header.innerHTML = "<span>개성이름</span><span>개성 설명</span><span>보유 무장</span>";
+      table.appendChild(header);
+
+      for (const row of rows) {
+        const item = document.createElement("article");
+        item.className = `trait-dex-table-row trait-${row.color || "none"}`;
+
+        const name = document.createElement("div");
+        name.className = "trait-dex-table-name";
+        const nameBox = document.createElement("span");
+        nameBox.className = `trait-name-box trait-${row.color || "none"}`;
+        nameBox.textContent = row.name;
+        name.appendChild(nameBox);
+
+        const description = document.createElement("div");
+        description.className = "trait-dex-table-description";
+        description.textContent = row.description || "설명 없음";
+
+        const owners = document.createElement("div");
+        owners.className = "trait-owner-list";
+        if (row.owners.length) {
+          for (const id of row.owners) owners.appendChild(traitOwnerChip(id));
+        } else {
+          const none = document.createElement("span");
+          none.className = "trait-owner-empty";
+          none.textContent = "-";
+          owners.appendChild(none);
+        }
+
+        item.append(name, description, owners);
+        table.appendChild(item);
+      }
+      els.results.appendChild(table);
+    }
+
+    els.resultTitle.textContent = "개성 도감";
+    els.resultMeta.textContent = `개성 ${rows.length}개`;
+    els.scoreBadge.textContent = `${rows.length}`;
+  }
+
   function renderSingle() {
     clearResults();
     setResultTabsVisible(false);
     const { ids, warnings } = resolveNames([els.centerInput.value.trim()]);
     if (!ids.length) {
-      renderEmpty("분석할 장수를 입력하세요.");
+      renderEmpty("장수를 검색하세요.");
       return;
     }
 
@@ -2988,26 +3345,14 @@
     const groupPaths = paths
       .filter((row) => row.path.length >= 3)
       .sort((a, b) => b.score - a.score || a.path.length - b.path.length);
-    const directRows = [...(neighbors.get(center)?.keys() || [])]
-      .map((id) => ({ id, relation: relationBetween(center, id) }))
-      .filter((row) => row.relation)
-      .sort((a, b) => {
-        const directionA = a.relation.arrow === "<->" ? 2 : a.relation.arrow === "->" ? 1 : 0;
-        const directionB = b.relation.arrow === "<->" ? 2 : b.relation.arrow === "->" ? 1 : 0;
-        return (
-          b.relation.value - a.relation.value ||
-          directionB - directionA ||
-          primary(b.id) - primary(a.id) ||
-          displayName(a.id).localeCompare(displayName(b.id), "ko")
-        );
-      })
+    const directRows = directAffinityRows(center);
 
     renderOfficerProfile(center);
     renderAffinityList(`친애 목록 · ${displayName(center)}`, center, directRows);
     renderPathCard(`집단 추천 · ${displayName(center)}`, groupPaths.slice(0, 50));
 
     renderWarnings(warnings);
-    els.resultTitle.textContent = "단일 장수 분석 결과";
+    els.resultTitle.textContent = "장수 도감";
     els.resultMeta.textContent = `${displayName(center)} · ${depth}단계 · ☆/◎/○ 포함`;
     els.scoreBadge.textContent = `${groupPaths.length}`;
   }
@@ -3095,8 +3440,13 @@
 
   function setEmptyResultHeader() {
     if (mode === "single") {
-      els.resultTitle.textContent = "단일 장수 분석 결과";
-      els.resultMeta.textContent = "분석할 장수를 입력하고 분석하세요.";
+      if (activeDexTab === "trait") {
+        els.resultTitle.textContent = "개성 도감";
+        els.resultMeta.textContent = "개성을 검색하세요.";
+      } else {
+        els.resultTitle.textContent = "장수 도감";
+        els.resultMeta.textContent = "장수를 검색하세요.";
+      }
     } else if (activeResultTab === "oath") {
       els.resultTitle.textContent = "의형제/결혼 추천";
       els.resultMeta.textContent = "보유 장수를 입력하고 분석하세요.";
@@ -3112,6 +3462,19 @@
     if (mode === "roster") renderRoster();
   }
 
+  function renderDex() {
+    if (activeDexTab === "trait") renderTraitDex();
+    else renderSingle();
+  }
+
+  function setDexTab(tab) {
+    activeDexTab = tab === "trait" ? "trait" : "officer";
+    closeSingleOfficerDropdown();
+    for (const button of els.dexTabButtons) button.classList.toggle("active", button.dataset.dexTab === activeDexTab);
+    for (const panel of els.dexPanels) panel.classList.toggle("hidden", panel.dataset.dexPanel !== activeDexTab);
+    if (mode === "single") renderDex();
+  }
+
   function setMode(nextMode) {
     closeSingleOfficerDropdown();
     mode = nextMode;
@@ -3119,12 +3482,15 @@
     for (const panel of els.panels) panel.classList.toggle("hidden", panel.dataset.panel !== mode);
     setResultTabsVisible(mode === "roster");
     if (mode === "roster") renderRoster();
-    else renderSingle();
+    else renderDex();
   }
 
   function bindEvents() {
     for (const button of els.segments) {
       button.addEventListener("click", () => setMode(button.dataset.mode));
+    }
+    for (const button of els.dexTabButtons) {
+      button.addEventListener("click", () => setDexTab(button.dataset.dexTab));
     }
     for (const button of els.resultTabButtons) {
       button.addEventListener("click", () => {
@@ -3149,6 +3515,9 @@
     els.centerInput.addEventListener("keydown", handleSingleSearchKeydown);
     document.addEventListener("pointerdown", (event) => {
       if (!els.singleSearchField?.contains(event.target)) closeSingleOfficerDropdown();
+    });
+    els.traitInput?.addEventListener("input", () => {
+      if (mode === "single" && activeDexTab === "trait") renderTraitDex();
     });
     for (const input of [els.groupCount, els.maxSize]) {
       input.addEventListener("change", () => {
@@ -3186,7 +3555,7 @@
     for (const button of els.runButtons) {
       button.addEventListener("click", () => {
         if (mode === "roster") analyzeRoster();
-        else renderSingle();
+        else renderDex();
       });
     }
   }

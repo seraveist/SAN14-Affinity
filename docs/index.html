@@ -11,7 +11,7 @@
         document.documentElement.dataset.theme = stored || (systemDark ? "dark" : "light");
       })();
     </script>
-    <link rel="stylesheet" href="./styles.css?v=1.4.1" />
+    <link rel="stylesheet" href="./styles.css?v=1.4.2" />
   </head>
   <body>
     <main class="lab-shell">
@@ -20,13 +20,13 @@
           <span class="brand-mark">14</span>
           <div class="brand-copy">
             <h1>삼국지14 친애 편성기</h1>
-            <p>v1.4</p>
+            <p>v1.4.2</p>
           </div>
         </div>
 
         <div class="segmented" role="tablist" aria-label="분석 모드">
           <button class="segment active" type="button" data-mode="roster">보유 장수 편성</button>
-          <button class="segment" type="button" data-mode="single">단일 장수 분석</button>
+          <button class="segment" type="button" data-mode="single">도감</button>
         </div>
 
         <button id="themeToggle" class="theme-toggle" type="button" aria-label="다크 테마로 변경">☾</button>
@@ -73,9 +73,14 @@
         </section>
 
         <section class="form-section single-panel hidden" data-panel="single">
-          <div class="input-card single-entry">
+          <div id="dexTabs" class="dex-tabs" role="tablist" aria-label="도감 보기">
+            <button class="dex-tab active" type="button" data-dex-tab="officer">장수 도감</button>
+            <button class="dex-tab" type="button" data-dex-tab="trait">개성 도감</button>
+          </div>
+
+          <div class="input-card single-entry" data-dex-panel="officer">
             <div class="single-label-row">
-              <label for="centerInput">분석 장수</label>
+              <label for="centerInput">장수 검색</label>
               <label for="hopDepth">탐색 단계</label>
             </div>
             <div class="single-row">
@@ -92,6 +97,11 @@
               <input id="hopDepth" type="number" min="1" max="4" value="4" />
               <button class="run-button" type="button" data-run-action>분석</button>
             </div>
+          </div>
+
+          <div class="input-card trait-entry hidden" data-dex-panel="trait">
+            <label for="traitInput">개성 검색</label>
+            <input id="traitInput" autocomplete="off" />
           </div>
         </section>
       </section>
@@ -147,6 +157,6 @@
     </template>
 
     <script src="./data.js?v=1.4"></script>
-    <script src="./app.js?v=1.4.1"></script>
+    <script src="./app.js?v=1.4.2"></script>
   </body>
 </html>
