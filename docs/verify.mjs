@@ -17,6 +17,8 @@ const data = sandbox.window.SAN14_DATA;
 const requiredIds = [
   "rosterInput",
   "centerInput",
+  "singleSearchField",
+  "singleOfficerDropdown",
   "groupCount",
   "maxSize",
   "duplicateSelectors",
@@ -29,7 +31,6 @@ const requiredIds = [
   "warnings",
   "results",
   "oathResults",
-  "officerNames",
   "groupTemplate",
 ];
 

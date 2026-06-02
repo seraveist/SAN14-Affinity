@@ -9,7 +9,15 @@
   const SUPPORT_TRAITS = new Set(["보좌", "응원", "악주"]);
   const TIER_ORDER = { reserve: 0, support: 1, upper: 2, key: 3, core: 4 };
   const THEME_STORAGE_KEY = "san14-theme";
-  const APP_VERSION = "v1.3";
+  const APP_VERSION = "v1.4";
+  const STAT_FIELDS = [
+    ["leadership", "통솔"],
+    ["war", "무력"],
+    ["intelligence", "지력"],
+    ["politics", "정치"],
+    ["charm", "매력"],
+  ];
+  const FORMATION_ORDER = ["어린", "봉시", "안행", "학익", "방원", "장사", "추행", "정란", "충차", "투석"];
   const REGRESSION_SAMPLES = {
     cao: {
       groupCount: 4,
@@ -49,6 +57,8 @@
     rosterInput: document.querySelector("#rosterInput"),
     coreInput: document.querySelector("#coreInput"),
     centerInput: document.querySelector("#centerInput"),
+    singleSearchField: document.querySelector("#singleSearchField"),
+    singleOfficerDropdown: document.querySelector("#singleOfficerDropdown"),
     groupCount: document.querySelector("#groupCount"),
     maxSize: document.querySelector("#maxSize"),
     duplicateSelectors: document.querySelector("#duplicateSelectors"),
@@ -64,12 +74,17 @@
     warnings: document.querySelector("#warnings"),
     results: document.querySelector("#results"),
     oathResults: document.querySelector("#oathResults"),
-    datalist: document.querySelector("#officerNames"),
     template: document.querySelector("#groupTemplate"),
   };
 
   let mode = "roster";
   let activeResultTab = "formation";
+  let currentRosterState = null;
+  let currentMemberDrag = null;
+  let suppressMemberClickUntil = 0;
+  let singleOfficerOptions = [];
+  let singleSearchMatches = [];
+  let singleSearchActiveIndex = -1;
   const rosterLimitValues = { groupCount: 4, maxSize: 20 };
   const recommendationFilterValues = { oath: true, marriage: true, rescue: true, support: true };
   const duplicateSelectionValues = new Map();
@@ -129,6 +144,10 @@
 
   function officerTraits(id) {
     return officer(id)?.traits?.map((trait) => trait.name) || [];
+  }
+
+  function traitDescription(name) {
+    return DATA.traitDescriptions?.[name] || "";
   }
 
   function hasSupportTrait(id) {
@@ -317,17 +336,139 @@
     for (const edge of DATA.edges) addNeighbor(edge.source, edge.target);
   }
 
-  function setupDatalist() {
-    const fragment = document.createDocumentFragment();
-    [...officers.values()]
-      .sort((a, b) => a.name.localeCompare(b.name, "ko") || a.id - b.id)
-      .forEach((item) => {
-        const option = document.createElement("option");
-        option.value = displayName(item.id);
-        if ((DATA.byName[item.name] || []).length > 1) option.label = statsLine(item.id);
-        fragment.appendChild(option);
+  function setupSingleOfficerSearch() {
+    singleOfficerOptions = [...officers.values()].sort((a, b) => a.name.localeCompare(b.name, "ko") || a.id - b.id);
+    if (!els.centerInput || !els.singleOfficerDropdown) return;
+    els.centerInput.setAttribute("aria-autocomplete", "list");
+    renderSingleOfficerDropdown(false);
+  }
+
+  function normalizeSingleSearch(value) {
+    return String(value || "")
+      .trim()
+      .toLocaleLowerCase("ko")
+      .replace(/\s+/g, "");
+  }
+
+  function singleOfficerMatches(item, query) {
+    if (!query) return true;
+    const haystack = normalizeSingleSearch(displayName(item.id));
+    return haystack.includes(query);
+  }
+
+  function singleSearchCell(text, className = "") {
+    const cell = document.createElement("span");
+    cell.className = className;
+    cell.textContent = text;
+    return cell;
+  }
+
+  function renderSingleOfficerDropdown(open = true) {
+    if (!els.singleOfficerDropdown || !els.centerInput) return;
+    const query = normalizeSingleSearch(els.centerInput.value);
+    singleSearchMatches = singleOfficerOptions.filter((item) => singleOfficerMatches(item, query));
+    if (singleSearchMatches.length) {
+      singleSearchActiveIndex = Math.min(Math.max(singleSearchActiveIndex, 0), singleSearchMatches.length - 1);
+    } else {
+      singleSearchActiveIndex = -1;
+    }
+
+    const table = document.createElement("div");
+    table.className = "single-officer-table";
+    const header = document.createElement("div");
+    header.className = "single-officer-row single-officer-header";
+    header.append(
+      singleSearchCell("이름", "single-officer-name"),
+      ...STAT_FIELDS.map(([, label]) => singleSearchCell(label, "single-officer-stat")),
+    );
+    table.appendChild(header);
+
+    if (!singleSearchMatches.length) {
+      const empty = document.createElement("div");
+      empty.className = "single-officer-empty";
+      empty.textContent = "검색 결과 없음";
+      table.appendChild(empty);
+    } else {
+      const fragment = document.createDocumentFragment();
+      singleSearchMatches.forEach((item, index) => {
+        const row = document.createElement("button");
+        row.className = "single-officer-row single-officer-option";
+        row.type = "button";
+        row.dataset.officerId = String(item.id);
+        row.setAttribute("role", "option");
+        row.setAttribute("aria-selected", String(index === singleSearchActiveIndex));
+        if (index === singleSearchActiveIndex) row.classList.add("is-active");
+        row.addEventListener("pointerdown", (event) => {
+          event.preventDefault();
+          selectSingleOfficer(item.id);
+        });
+        const stats = item.stats || {};
+        row.append(
+          singleSearchCell(displayName(item.id), "single-officer-name"),
+          ...STAT_FIELDS.map(([key]) => singleSearchCell(String(stats[key] || 0), "single-officer-stat")),
+        );
+        fragment.appendChild(row);
       });
-    els.datalist.appendChild(fragment);
+      table.appendChild(fragment);
+    }
+
+    els.singleOfficerDropdown.replaceChildren(table);
+    els.singleOfficerDropdown.classList.toggle("hidden", !open);
+    els.centerInput.setAttribute("aria-expanded", String(open));
+    syncSingleSearchActiveRow();
+  }
+
+  function openSingleOfficerDropdown() {
+    renderSingleOfficerDropdown(true);
+  }
+
+  function closeSingleOfficerDropdown() {
+    if (!els.singleOfficerDropdown || !els.centerInput) return;
+    els.singleOfficerDropdown.classList.add("hidden");
+    els.centerInput.setAttribute("aria-expanded", "false");
+    singleSearchActiveIndex = -1;
+  }
+
+  function selectSingleOfficer(id) {
+    els.centerInput.value = displayName(id);
+    closeSingleOfficerDropdown();
+    els.centerInput.focus();
+  }
+
+  function syncSingleSearchActiveRow() {
+    if (!els.singleOfficerDropdown) return;
+    const rows = [...els.singleOfficerDropdown.querySelectorAll(".single-officer-option")];
+    rows.forEach((row, index) => {
+      const active = index === singleSearchActiveIndex;
+      row.classList.toggle("is-active", active);
+      row.setAttribute("aria-selected", String(active));
+      if (active) row.scrollIntoView?.({ block: "nearest" });
+    });
+  }
+
+  function moveSingleSearchActive(delta) {
+    if (!singleSearchMatches.length) return;
+    singleSearchActiveIndex = (singleSearchActiveIndex + delta + singleSearchMatches.length) % singleSearchMatches.length;
+    syncSingleSearchActiveRow();
+  }
+
+  function handleSingleSearchKeydown(event) {
+    if (!els.singleOfficerDropdown) return;
+    const isOpen = !els.singleOfficerDropdown.classList.contains("hidden");
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (!isOpen) openSingleOfficerDropdown();
+      else moveSingleSearchActive(1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!isOpen) openSingleOfficerDropdown();
+      else moveSingleSearchActive(-1);
+    } else if (event.key === "Enter" && isOpen && singleSearchActiveIndex >= 0) {
+      event.preventDefault();
+      selectSingleOfficer(singleSearchMatches[singleSearchActiveIndex].id);
+    } else if (event.key === "Escape") {
+      closeSingleOfficerDropdown();
+    }
   }
 
   function parseNames(text) {
@@ -434,7 +575,7 @@
     select.addEventListener("change", () => {
       const nextId = Number(select.value);
       duplicateSelectionValues.set(row.key, nextId);
-      if (mode === "roster") renderRoster();
+      invalidateRosterAnalysis();
     });
 
     wrapper.append(name, select);
@@ -1393,10 +1534,11 @@
   }
 
   function formationStats(groups, unassigned = []) {
+    const nonEmptyGroups = groups.filter((group) => group.length);
     return {
-      groupCount: groups.length,
-      smallCount: groups.filter((group) => group.length <= 3).length,
-      singleCount: groups.filter((group) => group.length === 1).length,
+      groupCount: nonEmptyGroups.length,
+      smallCount: nonEmptyGroups.filter((group) => group.length <= 3).length,
+      singleCount: nonEmptyGroups.filter((group) => group.length === 1).length,
       unassignedCount: unassigned.length,
     };
   }
@@ -2057,22 +2199,155 @@
     if (!visible) setResultTab("formation");
   }
 
-  function memberChip(id, buff) {
+  function memberChip(id, buff, options = {}) {
     const chip = document.createElement("span");
     chip.className = "member-chip";
+    chip.dataset.officerId = String(id);
     chip.textContent = displayName(id);
     const score = document.createElement("strong");
     score.textContent = `+${buff.get(id) || 0}`;
     chip.appendChild(score);
+    chip.addEventListener("mouseenter", () => setMemberHover(chip, true));
+    chip.addEventListener("mouseleave", () => setMemberHover(chip, false));
+    chip.addEventListener("click", () => {
+      if (Date.now() < suppressMemberClickUntil) return;
+      openOfficerModal(Number(chip.dataset.officerId));
+    });
+    if (options.draggable) {
+      chip.draggable = true;
+      chip.addEventListener("dragstart", (event) => startMemberDrag(event, chip));
+      chip.addEventListener("dragend", () => endMemberDrag(chip));
+    }
     return chip;
+  }
+
+  function startMemberDrag(event, chip) {
+    if (!currentRosterState) return;
+    const id = Number(chip.dataset.officerId);
+    currentMemberDrag = { id };
+    suppressMemberClickUntil = Date.now() + 350;
+    chip.classList.add("is-dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(id));
+  }
+
+  function endMemberDrag(chip) {
+    chip.classList.remove("is-dragging");
+    currentMemberDrag = null;
+    suppressMemberClickUntil = Date.now() + 350;
+    clearDropTargets();
+  }
+
+  function clearDropTargets() {
+    for (const card of document.querySelectorAll(".group-card.is-drop-target")) {
+      card.classList.remove("is-drop-target");
+    }
+  }
+
+  function draggedOfficerId(event) {
+    const fromState = currentMemberDrag?.id;
+    if (fromState) return fromState;
+    const fromTransfer = Number(event.dataTransfer?.getData("text/plain"));
+    return Number.isFinite(fromTransfer) ? fromTransfer : null;
+  }
+
+  function setupDropZone(card, targetType, targetIndex = null) {
+    card.dataset.dropType = targetType;
+    if (targetIndex !== null) card.dataset.dropIndex = String(targetIndex);
+
+    card.addEventListener("dragover", (event) => {
+      const id = draggedOfficerId(event);
+      if (!canDropOfficer(id, targetType, targetIndex)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      card.classList.add("is-drop-target");
+    });
+    card.addEventListener("dragleave", (event) => {
+      if (!card.contains(event.relatedTarget)) card.classList.remove("is-drop-target");
+    });
+    card.addEventListener("drop", (event) => {
+      const id = draggedOfficerId(event);
+      if (!canDropOfficer(id, targetType, targetIndex)) return;
+      event.preventDefault();
+      moveOfficerToTarget(id, targetType, targetIndex);
+      suppressMemberClickUntil = Date.now() + 350;
+      currentMemberDrag = null;
+      clearDropTargets();
+    });
+  }
+
+  function canDropOfficer(id, targetType, targetIndex) {
+    if (!currentRosterState || !id) return false;
+    if (targetType === "group") {
+      return !currentRosterState.groups[targetIndex]?.includes(id);
+    }
+    if (targetType === "unassigned") return !currentRosterState.unassigned.includes(id);
+    return false;
+  }
+
+  function moveOfficerToTarget(id, targetType, targetIndex) {
+    if (!currentRosterState) return;
+    currentRosterState.groups = currentRosterState.groups.map((group) => group.filter((memberId) => memberId !== id));
+    currentRosterState.unassigned = currentRosterState.unassigned.filter((memberId) => memberId !== id);
+    if (targetType === "group" && currentRosterState.groups[targetIndex]) {
+      currentRosterState.groups[targetIndex].push(id);
+    } else {
+      currentRosterState.unassigned.push(id);
+    }
+    currentRosterState.manual = true;
+    renderRoster();
   }
 
   function relationLine(edge) {
     const row = document.createElement("div");
-    row.className = `relation-line relation-card ${REL_CLASS[edge.label]}`;
+    row.className = `relation-line relation-card compact-relation-card ${REL_CLASS[edge.label]}`;
+    row.dataset.a = String(edge.a);
+    row.dataset.b = String(edge.b);
     row.innerHTML = `<span class="relation-name">${displayName(edge.a)}</span><span class="relation-symbol">${edge.label}</span><span class="relation-name relation-target">${displayName(edge.b)}</span>`;
     row.title = `${displayName(edge.a)} ${edge.arrow} ${edge.label} ${displayName(edge.b)}`;
     return row;
+  }
+
+  function setMemberHover(chip, active) {
+    const card = chip.closest(".group-card");
+    if (!card) return;
+
+    const scope = card.parentElement || els.results;
+    clearMemberHover(scope);
+    if (!active) return;
+
+    chip.classList.add("is-hovered");
+    card.classList.add("has-member-hover");
+    const officerId = chip.dataset.officerId;
+    for (const line of card.querySelectorAll(".relation-line[data-a][data-b]")) {
+      const related = line.dataset.a === officerId || line.dataset.b === officerId;
+      line.classList.toggle("is-related", related);
+    }
+
+    for (const otherCard of scope.querySelectorAll(".group-card")) {
+      if (otherCard === card) continue;
+      let hasCrossRelation = false;
+      for (const otherChip of otherCard.querySelectorAll(".member-chip[data-officer-id]")) {
+        const otherId = Number(otherChip.dataset.officerId);
+        if (relationBetween(Number(officerId), otherId)) {
+          hasCrossRelation = true;
+          otherChip.classList.add("is-cross-related");
+        }
+      }
+      otherCard.classList.toggle("has-cross-hover", hasCrossRelation);
+    }
+  }
+
+  function clearMemberHover(scope) {
+    for (const item of scope.querySelectorAll(".member-chip.is-hovered, .member-chip.is-cross-related")) {
+      item.classList.remove("is-hovered", "is-cross-related");
+    }
+    for (const item of scope.querySelectorAll(".group-card.has-member-hover, .group-card.has-cross-hover")) {
+      item.classList.remove("has-member-hover", "has-cross-hover");
+    }
+    for (const item of scope.querySelectorAll(".relation-line.is-related")) {
+      item.classList.remove("is-related");
+    }
   }
 
   function relationNote(text) {
@@ -2106,6 +2381,202 @@
     els.results.appendChild(card);
   }
 
+  function profileBlock(labelText) {
+    const block = document.createElement("section");
+    block.className = "profile-block";
+    const label = document.createElement("div");
+    label.className = "section-label";
+    label.textContent = labelText;
+    block.appendChild(label);
+    return block;
+  }
+
+  function officerFormationNames(id) {
+    return (officer(id)?.formations || []).map((formation) => formation.ko || formation.name).filter(Boolean);
+  }
+
+  function formationSummary(group) {
+    const byFormation = new Map();
+    for (const id of group) {
+      for (const name of officerFormationNames(id)) {
+        if (!byFormation.has(name)) byFormation.set(name, []);
+        byFormation.get(name).push(id);
+      }
+    }
+
+    const orderedRows = FORMATION_ORDER.map((name) => ({ name, ids: byFormation.get(name) || [] }));
+    const extraRows = [...byFormation.entries()]
+      .filter(([name]) => !FORMATION_ORDER.includes(name))
+      .sort(([nameA, idsA], [nameB, idsB]) => {
+        const orderA = FORMATION_ORDER.indexOf(nameA);
+        const orderB = FORMATION_ORDER.indexOf(nameB);
+        const safeOrderA = orderA < 0 ? FORMATION_ORDER.length : orderA;
+        const safeOrderB = orderB < 0 ? FORMATION_ORDER.length : orderB;
+        return safeOrderA - safeOrderB || idsB.length - idsA.length || nameA.localeCompare(nameB, "ko");
+      })
+      .map(([name, ids]) => ({ name, ids }));
+    return [...orderedRows, ...extraRows];
+  }
+
+  function renderGroupFormationSummary(group) {
+    const rows = formationSummary(group);
+    const block = document.createElement("section");
+    block.className = "group-formation-summary";
+    const label = document.createElement("div");
+    label.className = "section-label";
+    label.textContent = "보유 진형";
+    block.appendChild(label);
+
+    if (!rows.length) {
+      const empty = document.createElement("div");
+      empty.className = "formation-summary-row formation-summary-empty";
+      empty.textContent = "-";
+      block.appendChild(empty);
+      return block;
+    }
+
+    for (const row of rows) {
+      const item = document.createElement("div");
+      item.className = "formation-summary-row";
+      if (!row.ids.length) item.classList.add("is-empty");
+      const name = document.createElement("span");
+      name.className = "formation-summary-name";
+      name.textContent = row.name;
+      const members = document.createElement("span");
+      members.className = "formation-summary-members";
+      members.textContent = row.ids.length ? row.ids.map(displayName).join(", ") : "-";
+      item.append(name, members);
+      block.appendChild(item);
+    }
+    return block;
+  }
+
+  function buildOfficerProfileBody(item) {
+    const body = document.createElement("div");
+    body.className = "officer-profile";
+
+    const stats = item.stats || {};
+    const statsBlock = profileBlock("능력치");
+    const statGrid = document.createElement("div");
+    statGrid.className = "stat-grid";
+    for (const [key, labelText] of STAT_FIELDS) {
+      const cell = document.createElement("div");
+      cell.className = "stat-cell";
+      const label = document.createElement("span");
+      label.textContent = labelText;
+      const value = document.createElement("strong");
+      value.textContent = String(stats[key] || 0);
+      cell.append(label, value);
+      statGrid.appendChild(cell);
+    }
+    statsBlock.appendChild(statGrid);
+    if (item.eventStats) {
+      const eventLine = document.createElement("div");
+      eventLine.className = "event-stat-line";
+      eventLine.textContent = `이벤트 후 ${STAT_FIELDS.map(([key, label]) => `${label} ${item.eventStats[key] || 0}`).join(" · ")}`;
+      statsBlock.appendChild(eventLine);
+    }
+    body.appendChild(statsBlock);
+
+    const traitBlock = profileBlock("개성 도감");
+    const traitList = document.createElement("div");
+    traitList.className = "trait-dex-list";
+    for (const trait of item.traits || []) {
+      const row = document.createElement("div");
+      row.className = `trait-dex-row trait-${trait.color || "none"}`;
+      const name = document.createElement("span");
+      name.className = "trait-dex-name";
+      name.textContent = trait.name;
+      const score = document.createElement("span");
+      score.className = "trait-dex-score";
+      score.textContent = `+${trait.score || 0}`;
+      const description = document.createElement("span");
+      description.className = "trait-dex-description";
+      description.textContent = traitDescription(trait.name) || "설명 없음";
+      row.append(name, score, description);
+      traitList.appendChild(row);
+    }
+    traitBlock.appendChild(traitList);
+    body.appendChild(traitBlock);
+
+    const formations = officerFormationNames(item.id);
+    const formationBlock = profileBlock("보유 진형");
+    const formationList = document.createElement("div");
+    formationList.className = "formation-chip-list";
+    for (const name of formations) {
+      const chip = document.createElement("span");
+      chip.className = "formation-chip";
+      chip.textContent = name;
+      formationList.appendChild(chip);
+    }
+    formationBlock.appendChild(formationList);
+    body.appendChild(formationBlock);
+
+    return body;
+  }
+
+  function renderOfficerProfile(id) {
+    const item = officer(id);
+    if (!item) return;
+
+    const card = els.template.content.firstElementChild.cloneNode(true);
+    card.classList.add("officer-profile-card", "tone-score-top");
+    card.querySelector("h3").textContent = `장수 도감 · ${displayName(id)}`;
+    card.querySelector(".group-score").textContent = item.jpName || "정보";
+    card.querySelector(".member-list").remove();
+    card.querySelector(".relation-list").remove();
+
+    card.appendChild(buildOfficerProfileBody(item));
+    els.results.appendChild(card);
+  }
+
+  function openOfficerModal(id) {
+    const item = officer(id);
+    if (!item) return;
+    closeOfficerModal();
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+    const modal = document.createElement("article");
+    modal.className = "officer-modal";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.setAttribute("aria-label", `${displayName(id)} 장수 정보`);
+
+    const header = document.createElement("div");
+    header.className = "modal-header";
+    const titleWrap = document.createElement("div");
+    const title = document.createElement("h3");
+    title.textContent = displayName(id);
+    const subtitle = document.createElement("p");
+    subtitle.textContent = item.jpName ? `${item.jpName} · 장수 정보` : "장수 정보";
+    titleWrap.append(title, subtitle);
+    const close = document.createElement("button");
+    close.className = "modal-close";
+    close.type = "button";
+    close.setAttribute("aria-label", "닫기");
+    close.textContent = "×";
+    close.addEventListener("click", closeOfficerModal);
+    header.append(titleWrap, close);
+
+    modal.append(header, buildOfficerProfileBody(item));
+    backdrop.appendChild(modal);
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) closeOfficerModal();
+    });
+    document.body.appendChild(backdrop);
+    document.addEventListener("keydown", closeOfficerModalOnEscape);
+  }
+
+  function closeOfficerModalOnEscape(event) {
+    if (event.key === "Escape") closeOfficerModal();
+  }
+
+  function closeOfficerModal() {
+    document.querySelector(".modal-backdrop")?.remove();
+    document.removeEventListener("keydown", closeOfficerModalOnEscape);
+  }
+
   function affinityLine(center, row) {
     const relation = row.relation;
     const arrow = relation.arrow === "<->" ? "↔" : relation.arrow === "<-" ? "←" : "→";
@@ -2134,12 +2605,14 @@
     const metrics = groupMetrics(group);
     const card = els.template.content.firstElementChild.cloneNode(true);
     const parent = options.parent || els.results;
-    card.classList.add(options.toneClass || scoreToneClass(metrics.score));
+    card.classList.add("roster-group-card", options.toneClass || scoreToneClass(metrics.score));
+    if (options.dropType) setupDropZone(card, options.dropType, options.dropIndex);
     card.querySelector("h3").textContent = title;
     card.querySelector(".group-score").textContent = `${group.length}명 | ${metrics.score}`;
 
     const memberList = card.querySelector(".member-list");
-    for (const id of group) memberList.appendChild(memberChip(id, metrics.buff));
+    for (const id of group) memberList.appendChild(memberChip(id, metrics.buff, { draggable: options.draggableMembers }));
+    memberList.after(renderGroupFormationSummary(group));
 
     const relationList = card.querySelector(".relation-list");
     relationList.classList.add("relation-grid");
@@ -2230,10 +2703,11 @@
     return "연결과 역할 보정 점수가 낮아 추천 후순위로 남은 장수";
   }
 
-  function renderUnassignedSection(section, parent) {
+  function renderUnassignedSection(section, parent, options = {}) {
     const ids = sectionMemberIds(section);
     const card = els.template.content.firstElementChild.cloneNode(true);
     card.classList.add(unassignedToneClass(section.key));
+    if (options.dropType) setupDropZone(card, options.dropType, options.dropIndex);
     card.querySelector("h3").textContent = unassignedSectionLabel(section);
     card.querySelector(".group-score").textContent =
       section.key === "line" ? `${ids.length}명 / ${section.lines.length}라인` : `${ids.length}명`;
@@ -2245,7 +2719,7 @@
 
     const memberList = card.querySelector(".member-list");
     const buff = new Map(ids.map((id) => [id, 0]));
-    for (const id of ids) memberList.appendChild(memberChip(id, buff));
+    for (const id of ids) memberList.appendChild(memberChip(id, buff, { draggable: options.draggableMembers }));
 
     const relationList = card.querySelector(".relation-list");
     relationList.classList.add("relation-grid");
@@ -2258,9 +2732,9 @@
     parent.appendChild(card);
   }
 
-  function renderUnassigned(ids, parent = els.results, groups = [], scope = null) {
+  function renderUnassigned(ids, parent = els.results, groups = [], scope = null, options = {}) {
     if (!ids.length) return;
-    for (const section of classifyUnassigned(ids, groups, scope)) renderUnassignedSection(section, parent);
+    for (const section of classifyUnassigned(ids, groups, scope)) renderUnassignedSection(section, parent, options);
   }
 
   function renderUnassignedPreviewSection(section, parent) {
@@ -2387,8 +2861,7 @@
     });
   }
 
-  function renderRoster() {
-    clearResults();
+  function analyzeRoster() {
     const tokens = parseNames(els.rosterInput.value);
     const duplicateState = updateDuplicateSelectors(tokens);
     const { ids, warnings } = resolveNames(tokens, {
@@ -2397,6 +2870,7 @@
     });
     warnings.push(...duplicateState.warnings);
     if (!ids.length) {
+      currentRosterState = null;
       renderEmpty("보유 장수를 입력하세요.");
       return;
     }
@@ -2412,10 +2886,52 @@
     if (planOptions.mode === "count" && groups.length !== planOptions.targetCount) {
       warnings.push(`목표 ${planOptions.targetCount}집단에 최대한 가깝게 ${groups.length}집단으로 편성했습니다.`);
     }
+    currentRosterState = {
+      ids,
+      fixedCoreIds,
+      planOptions,
+      groups: groups.map((group) => [...group]),
+      unassigned: [...unassigned],
+      warnings,
+      manual: false,
+    };
+    renderRoster();
+  }
+
+  function currentRosterPlan() {
+    if (!currentRosterState) return null;
+    return {
+      groups: currentRosterState.groups.map((group) => [...group]),
+      unassigned: [...currentRosterState.unassigned],
+    };
+  }
+
+  function renderRoster() {
+    clearResults();
+    if (!currentRosterState) {
+      renderEmpty("분석 버튼을 눌러 보유 장수 편성을 계산하세요.");
+      return;
+    }
+
+    const { ids, fixedCoreIds, planOptions } = currentRosterState;
+    const plan = currentRosterPlan();
+    const groups = plan.groups;
+    const unassigned = plan.unassigned || [];
     const total = totalScore(groups);
     const allOathRecommendations =
       activeResultTab === "oath" ? recommendOathSets(ids, planOptions, plan, RECOMMENDATION_LIMIT * 4) : [];
     const oathRecommendations = allOathRecommendations.filter(passesRecommendationFilters).slice(0, RECOMMENDATION_LIMIT);
+    const warnings = [...currentRosterState.warnings];
+    const oversizeGroups = groups
+      .map((group, index) => ({ index, size: group.length }))
+      .filter((group) => group.size > planOptions.maxSize);
+    if (oversizeGroups.length) {
+      warnings.push(
+        `수동 편성으로 상한 ${planOptions.maxSize}명을 넘은 집단: ${oversizeGroups
+          .map((group) => `${group.index + 1}집단 ${group.size}명`)
+          .join(", ")}`,
+      );
+    }
 
     if (activeResultTab === "formation") {
       groups.forEach((group, index) => {
@@ -2423,9 +2939,16 @@
           .slice(0, 3)
           .map(displayName)
           .join(", ");
-        renderGroup(`${index + 1}집단 · ${topNames}`, group);
+        renderGroup(`${index + 1}집단 · ${topNames}`, group, {
+          dropType: "group",
+          dropIndex: index,
+          draggableMembers: true,
+        });
       });
-      renderUnassigned(unassigned, els.results, groups, ids);
+      renderUnassigned(unassigned, els.results, groups, ids, {
+        dropType: "unassigned",
+        draggableMembers: true,
+      });
     } else {
       renderOathRecommendations(oathRecommendations, allOathRecommendations.length);
     }
@@ -2438,7 +2961,7 @@
       els.scoreBadge.textContent = `${oathRecommendations.length}건`;
     } else {
       els.resultTitle.textContent = "보유 장수 편성 결과";
-      els.resultMeta.textContent = `${ids.length}명 · 목표 ${planOptions.targetCount}집단 · 상한 ${planOptions.maxSize}명 · 코어 고정 ${fixedCoreIds.length}명 · 미편성 ${unassigned.length}명`;
+      els.resultMeta.textContent = `${ids.length}명 · 목표 ${planOptions.targetCount}집단 · 상한 ${planOptions.maxSize}명 · 코어 고정 ${fixedCoreIds.length}명 · 미편성 ${unassigned.length}명${currentRosterState.manual ? " · 수동 편성" : ""}`;
       els.scoreBadge.textContent = `${Math.round(total)}`;
     }
   }
@@ -2472,6 +2995,7 @@
         );
       })
 
+    renderOfficerProfile(center);
     renderAffinityList(`친애 목록 · ${displayName(center)}`, center, directRows);
     renderPathCard(`집단 추천 · ${displayName(center)}`, groupPaths.slice(0, 50));
 
@@ -2524,14 +3048,14 @@
 
     if (!pathRows.length) {
       const empty = document.createElement("div");
-      empty.className = "relation-line";
+      empty.className = "relation-line path-relation-line";
       empty.textContent = "경로 없음";
       relationList.appendChild(empty);
     }
 
     for (const row of pathRows) {
       const line = document.createElement("div");
-      line.className = "relation-line";
+      line.className = "relation-line path-relation-line";
       line.innerHTML = pathToText(row.path);
       relationList.appendChild(line);
     }
@@ -2542,11 +3066,11 @@
     const parts = [];
     for (let i = 0; i < path.length; i += 1) {
       if (i === 0) {
-        parts.push(displayName(path[i]));
+        parts.push(`<span class="path-node">${displayName(path[i])}</span>`);
         continue;
       }
       const relation = relationBetween(path[i - 1], path[i]);
-      parts.push(`<span class="relation-symbol">${relation.label}</span> ${displayName(path[i])}`);
+      parts.push(`<span class="relation-symbol path-symbol">${relation.label}</span><span class="path-node">${displayName(path[i])}</span>`);
     }
     return parts.join(" ");
   }
@@ -2576,7 +3100,13 @@
     els.scoreBadge.textContent = "READY";
   }
 
+  function invalidateRosterAnalysis() {
+    currentRosterState = null;
+    if (mode === "roster") renderRoster();
+  }
+
   function setMode(nextMode) {
+    closeSingleOfficerDropdown();
     mode = nextMode;
     for (const button of els.segments) button.classList.toggle("active", button.dataset.mode === mode);
     for (const panel of els.panels) panel.classList.toggle("hidden", panel.dataset.panel !== mode);
@@ -2598,15 +3128,26 @@
     els.rosterInput.addEventListener("input", () => {
       updateRosterLimitControls();
       updateDuplicateSelectors();
+      invalidateRosterAnalysis();
     });
     els.coreInput.addEventListener("input", () => {
       updateRosterLimitControls();
+      invalidateRosterAnalysis();
+    });
+    els.centerInput.addEventListener("focus", openSingleOfficerDropdown);
+    els.centerInput.addEventListener("input", () => {
+      singleSearchActiveIndex = 0;
+      openSingleOfficerDropdown();
+    });
+    els.centerInput.addEventListener("keydown", handleSingleSearchKeydown);
+    document.addEventListener("pointerdown", (event) => {
+      if (!els.singleSearchField?.contains(event.target)) closeSingleOfficerDropdown();
     });
     for (const input of [els.groupCount, els.maxSize]) {
       input.addEventListener("change", () => {
         rosterLimitValues.groupCount = Number(els.groupCount.value) || rosterLimitValues.groupCount;
         rosterLimitValues.maxSize = Number(els.maxSize.value) || rosterLimitValues.maxSize;
-        if (mode === "roster") renderRoster();
+        invalidateRosterAnalysis();
       });
     }
     for (const input of els.recommendationFilterInputs) {
@@ -2627,7 +3168,7 @@
         els.maxSize.value = sample.maxSize;
         updateRosterLimitControls();
         updateDuplicateSelectors();
-        renderRoster();
+        invalidateRosterAnalysis();
         button.closest(".preset-popover")?.removeAttribute("open");
       });
     }
@@ -2637,7 +3178,7 @@
     });
     for (const button of els.runButtons) {
       button.addEventListener("click", () => {
-        if (mode === "roster") renderRoster();
+        if (mode === "roster") analyzeRoster();
         else renderSingle();
       });
     }
@@ -2645,7 +3186,7 @@
 
   function init() {
     setupGraph();
-    setupDatalist();
+    setupSingleOfficerSearch();
     initTheme();
     bindEvents();
     els.rosterInput.value = "";

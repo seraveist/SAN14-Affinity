@@ -205,7 +205,7 @@ async function runRegression(source) {
     return {
       key: sample.key,
       name: sample.name,
-      algorithm: "v1.3",
+      algorithm: "v1.4",
       inputCount: tokens.length,
       resolvedCount: resolved.ids.length,
       score: api.totalScore(plan.groups),
