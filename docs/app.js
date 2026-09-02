@@ -3,11 +3,19 @@
   const REL_VALUE = { "☆": 3, "◎": 2, "○": 1 };
   const REL_LABEL = { 3: "☆", 2: "◎", 1: "○" };
   const REL_CLASS = { "☆": "star", "◎": "double", "○": "single" };
-  const MAX_GROUP_SIZE = 30;
+  const MAX_GROUP_SIZE = 15;
+  const MAX_GROUP_COUNT = 10;
+  const DEFAULT_AUTO_GROUP_COUNT_LIMIT = 5;
   const MIN_GROUP_SIZE = 3;
   const RECOMMENDATION_LIMIT = 6;
   const SUPPORT_TRAITS = new Set(["보좌", "응원", "악주"]);
   const TIER_ORDER = { reserve: 0, support: 1, upper: 2, key: 3, core: 4 };
+  const FRONT_FORMATIONS = new Set(["방원", "어린"]);
+  const REAR_FORMATIONS = new Set(["안행"]);
+  const SIEGE_FORMATIONS = new Set(["정란", "충차", "투석"]);
+  const MORALE_TRAITS = new Set(["응원", "악주"]);
+  const DEBUFF_TRAITS = new Set(["경국"]);
+  const BATTLE_SUPPORT_TRAITS = new Set(["보좌", "응원", "악주", "경국", "호위"]);
   const THEME_STORAGE_KEY = "san14-theme";
   const APP_VERSION = "v1.4.2";
   const STAT_FIELDS = [
@@ -182,22 +190,18 @@
   const REGRESSION_SAMPLES = {
     cao: {
       groupCount: 4,
-      maxSize: 20,
       text: "조조 조인 조홍 조순 조휴 하후돈 하후연 하후덕 하후상 순욱 순유 곽가 유엽 정욱 변씨 환씨 조비 조창 조식 조충 우금 우금 장료 이전 악진 서황 장합 사마의 조엄 가후 전위 허저 종요 장창포 종회 등애 학소",
     },
     liu: {
       groupCount: 4,
-      maxSize: 20,
       text: "유비 관우 장비 손건 미축 미방 감씨 미씨 조운 주창 진도 요화 제갈량 황월영 방통 서서 위연 황충 마초 마대 마운록 장임 황권 엄안 뇌동 법정 오란 오의 오반 유봉 관평 관색 관흥 관은병 장포 하후씨 장씨 강유 왕보 조루",
     },
     sun: {
       groupCount: 4,
-      maxSize: 20,
       text: "손책 주유 대교 소교 노숙 정보 한당 황개 주치 여범 장소 장굉 조무 감녕 여몽 손권 오국태 육손 손씨 장흠 전종 주연 주태 손하 손익 손상향 서씨 제갈근 손교 손유 태사자 태사향",
     },
     yuan: {
       groupCount: 4,
-      maxSize: 20,
       text: "원소 유씨 원담 원희 원상 고간 안량 문추 고람 장합 저수 전풍 저곡 심배 봉기 곽도 순우경 전예 선우보 염유 전주 유화",
     },
   };
@@ -221,10 +225,8 @@
     coreInput: document.querySelector("#coreInput"),
     centerInput: document.querySelector("#centerInput"),
     singleSearchField: document.querySelector("#singleSearchField"),
-    singleOfficerDropdown: document.querySelector("#singleOfficerDropdown"),
     traitInput: document.querySelector("#traitInput"),
     groupCount: document.querySelector("#groupCount"),
-    maxSize: document.querySelector("#maxSize"),
     duplicateSelectors: document.querySelector("#duplicateSelectors"),
     recommendationFilters: document.querySelector("#recommendationFilters"),
     recommendationFilterInputs: [...document.querySelectorAll("[data-rec-filter]")],
@@ -236,6 +238,7 @@
     resultMeta: document.querySelector("#resultMeta"),
     scoreBadge: document.querySelector("#scoreBadge"),
     warnings: document.querySelector("#warnings"),
+    resultSummary: document.querySelector("#resultSummary"),
     results: document.querySelector("#results"),
     oathResults: document.querySelector("#oathResults"),
     template: document.querySelector("#groupTemplate"),
@@ -247,10 +250,10 @@
   let currentRosterState = null;
   let currentMemberDrag = null;
   let suppressMemberClickUntil = 0;
+  let activeOfficerDetailId = null;
+  let officerDexListQuery = "";
   let singleOfficerOptions = [];
-  let singleSearchMatches = [];
-  let singleSearchActiveIndex = -1;
-  const rosterLimitValues = { groupCount: 4, maxSize: 20 };
+  const rosterLimitValues = { groupCount: 4 };
   const recommendationFilterValues = { oath: true, marriage: true, rescue: true, support: true };
   const duplicateSelectionValues = new Map();
 
@@ -375,6 +378,17 @@
     return Math.max(min, Math.min(max, base));
   }
 
+  function isAutoGroupCountValue(value) {
+    const text = String(value ?? "").trim().toLowerCase();
+    return text === "auto" || text === "자동";
+  }
+
+  function maxPlanningGroupCount(rosterSize = 0, groupCountLimit = MAX_GROUP_COUNT) {
+    const size = Number(rosterSize);
+    const limit = clampInteger(groupCountLimit, 1, MAX_GROUP_COUNT, DEFAULT_AUTO_GROUP_COUNT_LIMIT);
+    return Math.max(1, Math.min(limit, Number.isFinite(size) && size > 0 ? Math.round(size) : limit));
+  }
+
   function minGroupCount(rosterSize, maxSize = MAX_GROUP_SIZE) {
     return Math.max(1, Math.ceil(rosterSize / maxSize));
   }
@@ -388,44 +402,51 @@
   }
 
   function updateRosterLimitControls(rosterSize = rosterTokenCount(), minTargetCount = coreTokenCount()) {
-    const maxSize = clampInteger(els.maxSize.value, MIN_GROUP_SIZE, MAX_GROUP_SIZE, rosterLimitValues.maxSize);
-    const minCount = Math.max(1, minTargetCount);
-    const maxCount = rosterSize
-      ? Math.max(minCount, rosterSize)
-      : Math.max(minCount, rosterLimitValues.groupCount, Number(els.groupCount.value) || 1);
-    const targetCount = clampInteger(els.groupCount.value, minCount, maxCount, rosterLimitValues.groupCount);
+    const maxCount = maxPlanningGroupCount(rosterSize, MAX_GROUP_COUNT);
+    const minCount = Math.max(1, Math.min(minTargetCount, maxCount));
+    const autoGroupCount = isAutoGroupCountValue(els.groupCount.value);
+    const targetCount = autoGroupCount
+      ? rosterLimitValues.groupCount
+      : clampInteger(els.groupCount.value, minCount, maxCount, rosterLimitValues.groupCount);
 
-    rosterLimitValues.maxSize = maxSize;
     rosterLimitValues.groupCount = targetCount;
-    els.maxSize.min = String(MIN_GROUP_SIZE);
-    els.maxSize.max = String(MAX_GROUP_SIZE);
-    els.maxSize.value = maxSize;
-    els.groupCount.min = String(minCount);
-    els.groupCount.max = String(maxCount);
-    els.groupCount.value = targetCount;
+    for (const option of els.groupCount.options) {
+      if (isAutoGroupCountValue(option.value)) {
+        option.disabled = false;
+        continue;
+      }
+      const value = Number(option.value);
+      option.disabled = !Number.isFinite(value) || value < minCount || value > maxCount;
+    }
+    if (!autoGroupCount) els.groupCount.value = targetCount;
   }
 
   function planningOptions(rosterSize, warnings, minTargetCount = 1) {
-    const rawMaxSize = Number(els.maxSize.value);
-    const maxSize = clampInteger(rawMaxSize, MIN_GROUP_SIZE, MAX_GROUP_SIZE, rosterLimitValues.maxSize);
-    if (Number.isFinite(rawMaxSize) && Math.round(rawMaxSize) !== maxSize) {
-      warnings.push(`집단 상한은 ${MIN_GROUP_SIZE}~${MAX_GROUP_SIZE} 범위로 조정됩니다.`);
+    const maxCount = maxPlanningGroupCount(rosterSize, MAX_GROUP_COUNT);
+    const minCount = Math.max(1, Math.min(minTargetCount, maxCount));
+    if (minTargetCount > MAX_GROUP_COUNT) {
+      warnings.push(`코어 고정은 최대 ${MAX_GROUP_COUNT}명까지만 집단 코어로 반영됩니다.`);
     }
 
-    const minCount = Math.max(1, minTargetCount);
-    const maxCount = Math.max(minCount, rosterSize);
+    if (isAutoGroupCountValue(els.groupCount.value)) {
+      updateRosterLimitControls(rosterSize, minCount);
+      const autoGroupLimit = maxPlanningGroupCount(
+        rosterSize,
+        Math.max(DEFAULT_AUTO_GROUP_COUNT_LIMIT, minTargetCount),
+      );
+      return { mode: "auto", maxSize: MAX_GROUP_SIZE, maxGroupCount: autoGroupLimit };
+    }
+
     const rawTargetCount = Number(els.groupCount.value);
     const targetCount = clampInteger(rawTargetCount, minCount, maxCount, rosterLimitValues.groupCount);
-    if (Number.isFinite(rawTargetCount) && Math.round(rawTargetCount) !== targetCount) {
+    if (!Number.isFinite(rawTargetCount) || Math.round(rawTargetCount) !== targetCount) {
       warnings.push(`목표 집단 수는 ${minCount}~${maxCount} 범위로 조정됩니다.`);
     }
 
-    rosterLimitValues.maxSize = maxSize;
     rosterLimitValues.groupCount = targetCount;
-    els.maxSize.value = maxSize;
     els.groupCount.value = targetCount;
     updateRosterLimitControls(rosterSize, minCount);
-    return { mode: "count", maxSize, targetCount };
+    return { mode: "count", maxSize: MAX_GROUP_SIZE, maxGroupCount: MAX_GROUP_COUNT, targetCount };
   }
 
   function displayName(id) {
@@ -502,10 +523,7 @@
   }
 
   function setupSingleOfficerSearch() {
-    singleOfficerOptions = [...officers.values()].sort((a, b) => a.name.localeCompare(b.name, "ko") || a.id - b.id);
-    if (!els.centerInput || !els.singleOfficerDropdown) return;
-    els.centerInput.setAttribute("aria-autocomplete", "list");
-    renderSingleOfficerDropdown(false);
+    singleOfficerOptions = [...officers.values()].sort((a, b) => a.id - b.id);
   }
 
   function normalizeSingleSearch(value) {
@@ -526,114 +544,6 @@
     cell.className = className;
     cell.textContent = text;
     return cell;
-  }
-
-  function renderSingleOfficerDropdown(open = true) {
-    if (!els.singleOfficerDropdown || !els.centerInput) return;
-    const query = normalizeSingleSearch(els.centerInput.value);
-    singleSearchMatches = singleOfficerOptions.filter((item) => singleOfficerMatches(item, query));
-    if (singleSearchMatches.length) {
-      singleSearchActiveIndex = Math.min(Math.max(singleSearchActiveIndex, 0), singleSearchMatches.length - 1);
-    } else {
-      singleSearchActiveIndex = -1;
-    }
-
-    const table = document.createElement("div");
-    table.className = "single-officer-table";
-    const header = document.createElement("div");
-    header.className = "single-officer-row single-officer-header";
-    header.append(
-      singleSearchCell("이름", "single-officer-name"),
-      ...STAT_FIELDS.map(([, label]) => singleSearchCell(label, "single-officer-stat")),
-    );
-    table.appendChild(header);
-
-    if (!singleSearchMatches.length) {
-      const empty = document.createElement("div");
-      empty.className = "single-officer-empty";
-      empty.textContent = "검색 결과 없음";
-      table.appendChild(empty);
-    } else {
-      const fragment = document.createDocumentFragment();
-      singleSearchMatches.forEach((item, index) => {
-        const row = document.createElement("button");
-        row.className = "single-officer-row single-officer-option";
-        row.type = "button";
-        row.dataset.officerId = String(item.id);
-        row.setAttribute("role", "option");
-        row.setAttribute("aria-selected", String(index === singleSearchActiveIndex));
-        if (index === singleSearchActiveIndex) row.classList.add("is-active");
-        row.addEventListener("pointerdown", (event) => {
-          event.preventDefault();
-          selectSingleOfficer(item.id);
-        });
-        const stats = item.stats || {};
-        row.append(
-          singleSearchCell(displayName(item.id), "single-officer-name"),
-          ...STAT_FIELDS.map(([key]) => singleSearchCell(String(stats[key] || 0), "single-officer-stat")),
-        );
-        fragment.appendChild(row);
-      });
-      table.appendChild(fragment);
-    }
-
-    els.singleOfficerDropdown.replaceChildren(table);
-    els.singleOfficerDropdown.classList.toggle("hidden", !open);
-    els.centerInput.setAttribute("aria-expanded", String(open));
-    syncSingleSearchActiveRow();
-  }
-
-  function openSingleOfficerDropdown() {
-    renderSingleOfficerDropdown(true);
-  }
-
-  function closeSingleOfficerDropdown() {
-    if (!els.singleOfficerDropdown || !els.centerInput) return;
-    els.singleOfficerDropdown.classList.add("hidden");
-    els.centerInput.setAttribute("aria-expanded", "false");
-    singleSearchActiveIndex = -1;
-  }
-
-  function selectSingleOfficer(id) {
-    els.centerInput.value = displayName(id);
-    closeSingleOfficerDropdown();
-    els.centerInput.focus();
-  }
-
-  function syncSingleSearchActiveRow() {
-    if (!els.singleOfficerDropdown) return;
-    const rows = [...els.singleOfficerDropdown.querySelectorAll(".single-officer-option")];
-    rows.forEach((row, index) => {
-      const active = index === singleSearchActiveIndex;
-      row.classList.toggle("is-active", active);
-      row.setAttribute("aria-selected", String(active));
-      if (active) row.scrollIntoView?.({ block: "nearest" });
-    });
-  }
-
-  function moveSingleSearchActive(delta) {
-    if (!singleSearchMatches.length) return;
-    singleSearchActiveIndex = (singleSearchActiveIndex + delta + singleSearchMatches.length) % singleSearchMatches.length;
-    syncSingleSearchActiveRow();
-  }
-
-  function handleSingleSearchKeydown(event) {
-    if (!els.singleOfficerDropdown) return;
-    const isOpen = !els.singleOfficerDropdown.classList.contains("hidden");
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      if (!isOpen) openSingleOfficerDropdown();
-      else moveSingleSearchActive(1);
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      if (!isOpen) openSingleOfficerDropdown();
-      else moveSingleSearchActive(-1);
-    } else if (event.key === "Enter" && isOpen && singleSearchActiveIndex >= 0) {
-      event.preventDefault();
-      selectSingleOfficer(singleSearchMatches[singleSearchActiveIndex].id);
-    } else if (event.key === "Escape") {
-      closeSingleOfficerDropdown();
-    }
   }
 
   function parseNames(text) {
@@ -873,6 +783,170 @@
       quality,
       buff,
       edges,
+    };
+  }
+
+  function hasAnyTrait(id, traitSet) {
+    return officerTraits(id).some((name) => traitSet.has(name));
+  }
+
+  function hasGuardTrait(id) {
+    return officerTraits(id).includes("호위");
+  }
+
+  function hasAnyFormation(id, formationSet) {
+    return officerFormationNames(id).some((name) => formationSet.has(name));
+  }
+
+  function groupBattleProfile(group, scope = group) {
+    const metrics = groupMetrics(group);
+    const size = group.length;
+    const possibleEdges = (size * Math.max(0, size - 1)) / 2;
+    const core = group[0];
+    const coreInfo = tierInfo(core, scope);
+    const relationDensity = possibleEdges ? metrics.edges.length / possibleEdges : 0;
+    const averageBuff = size ? metrics.stack / size : 0;
+    const roles = {
+      battleCore: coreInfo.core || coreInfo.key || isCommandCoreType(core) || group.some(isIndependentCoreType),
+      front: group.some((id) => hasAnyFormation(id, FRONT_FORMATIONS)),
+      rear: group.some((id) => hasAnyFormation(id, REAR_FORMATIONS)),
+      siege: group.some((id) => hasAnyFormation(id, SIEGE_FORMATIONS)),
+      support: group.some((id) => hasAnyTrait(id, BATTLE_SUPPORT_TRAITS)),
+      guard: group.some(hasGuardTrait),
+      morale: group.some((id) => officerTraits(id).includes("응원") || officerTraits(id).includes("악주")),
+      debuff: group.some((id) => officerTraits(id).includes("경국")),
+    };
+    const readyLinks = metrics.edges.length >= Math.max(2, Math.min(4, Math.ceil(size / 3)));
+    const battleReady = size >= 3 && roles.battleCore && readyLinks;
+    const marginal = !battleReady && size >= 2 && roles.battleCore && metrics.edges.length > 0;
+
+    return {
+      group,
+      core,
+      coreInfo,
+      metrics,
+      size,
+      relationDensity,
+      averageBuff,
+      roles,
+      battleReady,
+      marginal,
+    };
+  }
+
+  function battleRoleScore(roles) {
+    return (
+      (roles.front ? 180 : 0) +
+      (roles.rear ? 150 : 0) +
+      (roles.front && roles.rear ? 140 : 0) +
+      (roles.siege ? 90 : 0) +
+      (roles.support ? 120 : 0) +
+      (roles.guard ? 80 : 0) +
+      (roles.morale ? 70 : 0) +
+      (roles.debuff ? 70 : 0)
+    );
+  }
+
+  function battleGroupAutoScore(profile) {
+    const { coreInfo, metrics, relationDensity, averageBuff, roles, size } = profile;
+    const relationScore =
+      metrics.quality * 92 + metrics.edges.length * 42 + metrics.stack * 12 + relationDensity * 360 + averageBuff * 90;
+    const coreScore =
+      coreInfo.power * 0.82 +
+      (roles.battleCore ? 320 : 0) +
+      (coreInfo.core ? 220 : coreInfo.key ? 150 : coreInfo.upper ? 60 : 0);
+    const sizeScore = Math.min(size, 12) * 72 + Math.max(0, size - 3) * 18;
+    const smallPenalty = size <= 1 ? 900 : size === 2 ? 470 : size === 3 ? 90 : 0;
+    const weakPenalty = roles.battleCore ? 0 : 420;
+    return relationScore + coreScore + sizeScore + battleRoleScore(roles) - smallPenalty - weakPenalty;
+  }
+
+  function evaluateAutoRosterPlan(plan, ids, planOptions) {
+    const groups = (plan.groups || []).filter((group) => group.length);
+    const unassigned = plan.unassigned || [];
+    const profiles = groups.map((group) => groupBattleProfile(group, ids));
+    const stats = formationStats(groups, unassigned);
+    const battleReadyCount = profiles.filter((profile) => profile.battleReady).length;
+    const marginalCount = profiles.filter((profile) => profile.marginal).length;
+    const tinyCount = profiles.filter((profile) => profile.size <= 2).length;
+    const weakCoreCount = profiles.filter((profile) => !profile.roles.battleCore).length;
+    const assignedCount = ids.length - unassigned.length;
+    const targetCount = plan.targetCount || planOptions.targetCount || stats.groupCount;
+    const relationTotal = profiles.reduce((sum, profile) => sum + profile.metrics.quality, 0);
+    const roleCompleteCount = profiles.filter((profile) => profile.roles.front && profile.roles.rear).length;
+    const groupScores = profiles.reduce((sum, profile) => sum + battleGroupAutoScore(profile), 0);
+    const splitValue =
+      battleReadyCount * 760 +
+      marginalCount * 160 +
+      stats.groupCount * 150 +
+      assignedCount * 28 +
+      relationTotal * 20 +
+      roleCompleteCount * 150;
+    const splitPenalty =
+      unassigned.length * 72 + stats.smallCount * 180 + tinyCount * 1250 + weakCoreCount * 480 + stats.singleCount * 900;
+
+    return {
+      score: Math.round(groupScores + splitValue - splitPenalty),
+      targetCount,
+      groupCount: stats.groupCount,
+      battleReadyCount,
+      marginalCount,
+      roleCompleteCount,
+      smallCount: stats.smallCount,
+      singleCount: stats.singleCount,
+      tinyCount,
+      weakCoreCount,
+      unassignedCount: unassigned.length,
+      assignedCount,
+    };
+  }
+
+  function compareAutoRosterCandidates(a, b) {
+    return (
+      b.evaluation.score - a.evaluation.score ||
+      b.evaluation.battleReadyCount - a.evaluation.battleReadyCount ||
+      b.evaluation.roleCompleteCount - a.evaluation.roleCompleteCount ||
+      a.evaluation.unassignedCount - b.evaluation.unassignedCount ||
+      a.evaluation.tinyCount - b.evaluation.tinyCount ||
+      b.targetCount - a.targetCount
+    );
+  }
+
+  function autoTargetCountRange(ids, planOptions) {
+    const maxCount = maxPlanningGroupCount(ids.length, planOptions.maxGroupCount);
+    const fixedCoreCount = new Set((planOptions.fixedCoreIds || []).filter((id) => ids.includes(id))).size;
+    const minCount = Math.max(1, Math.min(fixedCoreCount, maxCount));
+    return { minCount, maxCount };
+  }
+
+  function autoRosterPlanCandidates(ids, planOptions) {
+    const { minCount, maxCount } = autoTargetCountRange(ids, planOptions);
+    const rows = [];
+    for (let targetCount = minCount; targetCount <= maxCount; targetCount += 1) {
+      const candidateOptions = { ...planOptions, mode: "count", targetCount };
+      const plan = planRosterCoreFirst(ids, candidateOptions);
+      const evaluation = evaluateAutoRosterPlan(plan, ids, candidateOptions);
+      rows.push({ targetCount, plan, evaluation });
+    }
+    return rows.sort(compareAutoRosterCandidates);
+  }
+
+  function planRosterAuto(ids, planOptions) {
+    const candidates = autoRosterPlanCandidates(ids, planOptions);
+    const best = candidates[0] || { targetCount: 1, plan: { groups: [], unassigned: [...ids] }, evaluation: null };
+    const finalGroupCount = best.plan.groups?.length || best.targetCount;
+    return {
+      ...best.plan,
+      targetCount: finalGroupCount,
+      auto: {
+        attemptedTargetCount: best.targetCount,
+        selectedGroupCount: finalGroupCount,
+        evaluation: best.evaluation,
+        candidates: candidates.map((row) => ({
+          targetCount: row.targetCount,
+          evaluation: row.evaluation,
+        })),
+      },
     };
   }
 
@@ -1371,6 +1445,198 @@
     }
   }
 
+  function roleRebalanceSpecs() {
+    return [
+      {
+        key: "guard",
+        label: "호위",
+        matches: hasGuardTrait,
+        duplicateRelief: 260,
+        baseRoleValue: 150,
+        maxScoreLoss: 220,
+        minAdjustedDelta: 360,
+        targetNeeds: (profile) => profile.roles.battleCore || profile.size >= 3,
+      },
+      {
+        key: "morale",
+        label: "응원/악주",
+        matches: (id) => hasAnyTrait(id, MORALE_TRAITS),
+        duplicateRelief: 220,
+        baseRoleValue: 130,
+        maxScoreLoss: 170,
+        minAdjustedDelta: 340,
+        targetNeeds: (profile) => profile.roles.battleCore || profile.size >= 3,
+      },
+      {
+        key: "debuff",
+        label: "경국",
+        matches: (id) => hasAnyTrait(id, DEBUFF_TRAITS),
+        duplicateRelief: 190,
+        baseRoleValue: 120,
+        maxScoreLoss: 150,
+        minAdjustedDelta: 330,
+        targetNeeds: (profile) => profile.roles.battleCore || profile.size >= 3,
+      },
+      {
+        key: "siege",
+        label: "공성",
+        matches: (id) => hasAnyFormation(id, SIEGE_FORMATIONS),
+        duplicateRelief: 180,
+        baseRoleValue: 120,
+        maxScoreLoss: 140,
+        minAdjustedDelta: 330,
+        targetNeeds: (profile) => profile.roles.battleCore || profile.size >= 4,
+      },
+      {
+        key: "rear",
+        label: "후열",
+        matches: (id) => hasAnyFormation(id, REAR_FORMATIONS),
+        duplicateRelief: 120,
+        baseRoleValue: 90,
+        maxScoreLoss: 90,
+        minAdjustedDelta: 300,
+        targetNeeds: (profile) => profile.roles.front || profile.battleReady,
+      },
+      {
+        key: "front",
+        label: "전열",
+        matches: (id) => hasAnyFormation(id, FRONT_FORMATIONS),
+        duplicateRelief: 120,
+        baseRoleValue: 90,
+        maxScoreLoss: 90,
+        minAdjustedDelta: 300,
+        targetNeeds: (profile) => profile.roles.rear || profile.battleReady,
+      },
+    ];
+  }
+
+  function profileHasRebalanceRole(profile, spec) {
+    if (spec.key === "guard") return profile.roles.guard;
+    if (spec.key === "morale") return profile.roles.morale;
+    if (spec.key === "debuff") return profile.roles.debuff;
+    if (spec.key === "siege") return profile.roles.siege;
+    if (spec.key === "rear") return profile.roles.rear;
+    if (spec.key === "front") return profile.roles.front;
+    return false;
+  }
+
+  function groupRebalanceRoleCount(group, spec) {
+    return group.filter(spec.matches).length;
+  }
+
+  function roleRebalanceValue(profile, spec) {
+    const formationCombo =
+      (spec.key === "front" && profile.roles.rear) || (spec.key === "rear" && profile.roles.front) ? 170 : 0;
+    const battleValue = profile.roles.battleCore ? 140 : 0;
+    const readyValue = profile.battleReady ? 65 : 0;
+    const siegeValue = spec.key === "siege" && (profile.roles.front || profile.roles.rear) ? 55 : 0;
+    const supportValue =
+      (spec.key === "guard" || spec.key === "morale" || spec.key === "debuff") && (profile.roles.front || profile.roles.rear)
+        ? 60
+        : 0;
+    return spec.baseRoleValue + formationCombo + battleValue + readyValue + siegeValue + supportValue;
+  }
+
+  function isRoleRebalanceTarget(group, scope, spec) {
+    const profile = groupBattleProfile(group, scope);
+    return !profileHasRebalanceRole(profile, spec) && spec.targetNeeds(profile);
+  }
+
+  function findBestRoleRebalance(groups, scope, maxSize) {
+    const baseScore = totalScore(groups);
+    let best = null;
+
+    for (const spec of roleRebalanceSpecs()) {
+      for (let sourceIndex = 0; sourceIndex < groups.length; sourceIndex += 1) {
+        const source = groups[sourceIndex];
+        const sourceRoleCount = groupRebalanceRoleCount(source, spec);
+        if (sourceRoleCount < 2) continue;
+
+        for (const id of source.slice(1).filter(spec.matches)) {
+          const nextSource = source.filter((memberId) => memberId !== id);
+          if (groupRebalanceRoleCount(nextSource, spec) < 1) continue;
+          if (nextSource.length < 2 || !groupMetrics(nextSource).edges.length) continue;
+
+          const currentFit = rosterFitScore(id, nextSource, scope);
+          if (!currentFit) continue;
+
+          for (let targetIndex = 0; targetIndex < groups.length; targetIndex += 1) {
+            if (sourceIndex === targetIndex) continue;
+
+            const target = groups[targetIndex];
+            if (!isRoleRebalanceTarget(target, scope, spec)) continue;
+
+            const swapIds = target.length < maxSize ? [null] : target.slice(1).filter((memberId) => !spec.matches(memberId));
+            for (const swapId of swapIds) {
+              const targetBase = swapId ? target.filter((memberId) => memberId !== swapId) : target;
+              if (targetBase.length < 2 || !groupMetrics(targetBase).edges.length) continue;
+
+              const nextSourceWithSwap = swapId ? [...nextSource, swapId] : nextSource;
+              if (nextSourceWithSwap.length > maxSize) continue;
+              if (swapId) {
+                const swapFit = rosterFitScore(swapId, nextSource, scope);
+                if (!canUseRosterFit(swapFit, "upper")) continue;
+                if (swapFit.relation.quality < 2) continue;
+              }
+
+              const targetFit = rosterFitScore(id, targetBase, scope);
+              if (!canUseRosterFit(targetFit, "upper")) continue;
+              if (targetFit.relation.quality < 2) continue;
+
+              const nextGroups = groups.map((group, index) => {
+                if (index === sourceIndex) return nextSourceWithSwap;
+                if (index === targetIndex) return [...targetBase, id];
+                return [...group];
+              });
+              const scoreDelta = totalScore(nextGroups) - baseScore;
+              if (scoreDelta < -spec.maxScoreLoss) continue;
+
+              const targetProfile = groupBattleProfile(targetBase, scope);
+              const duplicateRelief = Math.max(0, sourceRoleCount - 1) * spec.duplicateRelief;
+              const roleValue = roleRebalanceValue(targetProfile, spec);
+              const relationValue =
+                targetFit.relation.quality * 45 + targetFit.relation.links * 30 + targetFit.relation.star * 90;
+              const balanceRelief = Math.max(0, source.length - target.length) * 24;
+              const lostRelationCost = Math.max(0, currentFit.relation.quality - targetFit.relation.quality) * 25;
+              const swapRelief = swapId ? 80 : 0;
+              const adjustedDelta =
+                scoreDelta + duplicateRelief + roleValue + relationValue + balanceRelief + swapRelief - lostRelationCost;
+              if (adjustedDelta < spec.minAdjustedDelta) continue;
+
+              const row = { spec, id, sourceIndex, targetIndex, swapId, adjustedDelta, scoreDelta };
+              if (
+                !best ||
+                row.adjustedDelta > best.adjustedDelta ||
+                (row.adjustedDelta === best.adjustedDelta && row.scoreDelta > best.scoreDelta)
+              ) {
+                best = row;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return best;
+  }
+
+  function rebalanceDuplicateBattleRoles(initialGroups, scope, maxSize) {
+    const groups = initialGroups.map((group) => [...group]);
+
+    for (let pass = 0; pass < 8; pass += 1) {
+      const best = findBestRoleRebalance(groups, scope, maxSize);
+      if (!best) break;
+      groups[best.sourceIndex] = groups[best.sourceIndex].filter((id) => id !== best.id);
+      if (best.swapId) {
+        groups[best.targetIndex] = groups[best.targetIndex].filter((id) => id !== best.swapId);
+        groups[best.sourceIndex].push(best.swapId);
+      }
+      groups[best.targetIndex].push(best.id);
+    }
+
+    return groups;
+  }
+
   function groupSizeBalancePenalty(groups) {
     if (!groups.length) return 0;
     const sizes = groups.map((group) => group.length);
@@ -1643,10 +1909,11 @@
 
   function planRosterCoreFirst(ids, planOptions) {
     const maxSize = planOptions.maxSize;
+    const maxCount = maxPlanningGroupCount(ids.length, planOptions.maxGroupCount);
     const targetCount =
       planOptions.mode === "count"
-        ? clampInteger(planOptions.targetCount, 1, Math.max(1, ids.length), rosterLimitValues.groupCount)
-        : Math.max(1, Math.min(ids.length, minGroupCount(ids.length, maxSize)));
+        ? clampInteger(planOptions.targetCount, 1, maxCount, rosterLimitValues.groupCount)
+        : Math.max(1, Math.min(maxCount, minGroupCount(ids.length, maxSize)));
     const cores = selectRosterCores(ids, targetCount, planOptions.fixedCoreIds || []);
     const groups = cores.map((id) => [id]);
     const remaining = new Set(ids.filter((id) => !cores.includes(id)));
@@ -1661,15 +1928,26 @@
     assignSmallLinePackages(groups, remaining, ids, maxSize);
     const balanced = balanceCoreRosterGroups(groups, ids, maxSize);
     const revalidated = revalidateKeyUpperAssignments(balanced, ids, maxSize);
-    return cleanupCoreRosterPlan(revalidated, remaining, ids);
+    const roleBalanced = rebalanceDuplicateBattleRoles(revalidated, ids, maxSize);
+    return { ...cleanupCoreRosterPlan(roleBalanced, remaining, ids), targetCount };
   }
 
   function normalizePlanOptions(options) {
-    return typeof options === "number" ? { mode: "size", maxSize: options } : options;
+    if (typeof options === "number") return { mode: "size", maxSize: options };
+    const normalizedMode = options?.mode || "count";
+    return {
+      mode: normalizedMode,
+      maxSize: options?.maxSize || MAX_GROUP_SIZE,
+      maxGroupCount:
+        options?.maxGroupCount ?? (normalizedMode === "auto" ? DEFAULT_AUTO_GROUP_COUNT_LIMIT : MAX_GROUP_COUNT),
+      targetCount: options?.targetCount ?? rosterLimitValues.groupCount,
+      fixedCoreIds: options?.fixedCoreIds || [],
+    };
   }
 
   function planRoster(ids, options) {
     const planOptions = normalizePlanOptions(options);
+    if (planOptions.mode === "auto") return planRosterAuto(ids, planOptions);
     return planRosterCoreFirst(ids, planOptions);
   }
 
@@ -1822,6 +2100,71 @@
     );
   }
 
+  function recommendationRoleSpecs() {
+    return [
+      ...roleRebalanceSpecs(),
+      {
+        key: "support",
+        label: "지원",
+        matches: (id) => hasAnyTrait(id, BATTLE_SUPPORT_TRAITS),
+        targetNeeds: (profile) => profile.roles.battleCore || profile.size >= 3,
+      },
+    ];
+  }
+
+  function profileHasRecommendationRole(profile, need) {
+    if (need.key === "support") return profile.roles.support;
+    return profileHasRebalanceRole(profile, need);
+  }
+
+  function recommendationRoleNeeds(group, scope) {
+    const profile = groupBattleProfile(group, scope);
+    return recommendationRoleSpecs().filter((need) => !profileHasRecommendationRole(profile, need) && need.targetNeeds(profile));
+  }
+
+  function recommendationRoleComplementScore(id, group, scope) {
+    const needs = recommendationRoleNeeds(group, scope);
+    if (!needs.length) return fieldPower(id) * 0.1;
+    return needs.reduce((sum, need) => sum + (need.matches(id) ? roleNeedScore(id, need.key) : 0), 0);
+  }
+
+  function recommendationRoleLabel(need) {
+    if (need.key === "morale") return "응원/악주";
+    if (need.key === "debuff") return "경국";
+    return need.label;
+  }
+
+  function recommendationPriorityLabel(need) {
+    return ["support", "morale", "debuff"].includes(need.key) ? "범위 버프 보강" : "전투 역할 보정";
+  }
+
+  function assignedRoleSourceCandidates(groups, targetIndex, need, scope) {
+    const rows = [];
+    for (let sourceIndex = 0; sourceIndex < groups.length; sourceIndex += 1) {
+      if (sourceIndex === targetIndex) continue;
+      const source = groups[sourceIndex];
+      if (source.length <= 3 || source.filter(need.matches).length < 2) continue;
+
+      for (const id of source.slice(1).filter(need.matches)) {
+        const remaining = source.filter((memberId) => memberId !== id);
+        if (remaining.length < 2 || !groupMetrics(remaining).edges.length) continue;
+        rows.push({
+          id,
+          sourceRank: 2,
+          sourceClass: `${recommendationRoleLabel(need)} 중복`,
+          donorIndex: sourceIndex,
+        });
+      }
+    }
+    return rows.sort(
+      (a, b) =>
+        roleNeedScore(b.id, need.key) - roleNeedScore(a.id, need.key) ||
+        (rosterFitScore(b.id, groups[targetIndex], scope)?.score || 0) -
+          (rosterFitScore(a.id, groups[targetIndex], scope)?.score || 0) ||
+        fieldPower(b.id) - fieldPower(a.id),
+    );
+  }
+
   function recommendOathSets(ids, planOptions, basePlan, limit = RECOMMENDATION_LIMIT) {
     const candidates = dedupeAdjustmentCandidates(generateAdjustmentCandidates(ids, basePlan.groups, basePlan.unassigned || []));
     const rows = [];
@@ -1832,6 +2175,7 @@
       if (seen.has(signature)) continue;
       seen.add(signature);
       const row = hydrateRecommendation(spec, ids, planOptions, basePlan);
+      if (!row) continue;
       if (
         row.stats.unassignedCount <= row.baseStats.unassignedCount &&
         recommendationKeepsSourceWithAnchor(row) &&
@@ -1912,23 +2256,29 @@
       }
     }
 
-    for (const target of infos) {
-      for (const need of missingRoleNeeds(target.group)) {
-        const sources = roleSourceCandidates(classified, need).filter((row) => groupIndex.get(row.id) !== target.index).slice(0, 8);
+    for (const target of targetInfos) {
+      for (const need of recommendationRoleNeeds(target.group, ids)) {
+        const sources = [
+          ...roleSourceCandidates(classified, need),
+          ...assignedRoleSourceCandidates(groups, target.index, need, ids),
+        ]
+          .filter((row) => groupIndex.get(row.id) !== target.index)
+          .slice(0, 8);
         for (const source of sources) {
           for (const anchor of groupAnchors(target.group, 3)) {
             pushAdjustmentCandidate(rows, {
               kind: "oath",
               priority: 3,
-              priorityLabel: "역할 부족 보정",
+              priorityLabel: recommendationPriorityLabel(need),
               ids: [source.id, anchor],
               anchorId: anchor,
               sourceIds: [source.id],
               targetIndex: target.index,
               needKey: need.key,
+              needLabel: recommendationRoleLabel(need),
               sourceRank: source.sourceRank,
               sourceClass: source.sourceClass,
-              reason: `${need.label} 보강`,
+              reason: `${recommendationRoleLabel(need)} 보강`,
             });
           }
         }
@@ -1967,7 +2317,8 @@
     for (const sourceAnchor of sourceAnchors) {
       for (const targetAnchor of groupAnchors(target.group, 4)) {
         const base = [sourceAnchor, targetAnchor];
-        const extra = bestThirdMember([...source.group, ...target.group], base, target.group);
+        const pool = [...source.group, ...target.group];
+        const extra = bestThirdMember(pool, base, target.group, pool);
         pushAdjustmentCandidate(rows, {
           kind,
           priority,
@@ -1984,12 +2335,12 @@
     }
   }
 
-  function bestThirdMember(pool, baseIds, targetGroup) {
+  function bestThirdMember(pool, baseIds, targetGroup, scope = pool) {
     return [...new Set(pool)]
       .filter((id) => !baseIds.includes(id))
       .sort(
         (a, b) =>
-          roleComplementScore(b, targetGroup) - roleComplementScore(a, targetGroup) ||
+          recommendationRoleComplementScore(b, targetGroup, scope) - recommendationRoleComplementScore(a, targetGroup, scope) ||
           fieldPower(b) - fieldPower(a) ||
           affinityReach(b).score - affinityReach(a).score,
       )
@@ -2031,6 +2382,29 @@
 
   function roleNeedScore(id, key) {
     const stats = officer(id)?.stats || {};
+    if (key === "front" || key === "rear") {
+      return fieldPower(id) * 0.72 + mainStat(id) * 1.1 + traitScore(id) * 8;
+    }
+    if (key === "siege") {
+      return (
+        (stats.leadership || 0) * 0.85 +
+        (stats.intelligence || 0) * 0.65 +
+        (stats.politics || 0) * 0.35 +
+        fieldPower(id) * 0.32
+      );
+    }
+    if (key === "guard") {
+      return (stats.leadership || 0) * 0.8 + (stats.war || 0) * 1.15 + fieldPower(id) * 0.35 + traitScore(id) * 8;
+    }
+    if (key === "morale" || key === "debuff" || key === "support") {
+      return (
+        fieldPower(id) * 0.34 +
+        (stats.charm || 0) * 0.85 +
+        (stats.intelligence || 0) * 0.45 +
+        (stats.politics || 0) * 0.35 +
+        traitScore(id) * 10
+      );
+    }
     if (key === "advisor") return (stats.intelligence || 0) * 1.4 + (stats.politics || 0) * 0.7 + fieldPower(id) * 0.1;
     if (key === "admin") return (stats.politics || 0) * 1.3 + (stats.intelligence || 0) * 0.4 + fieldPower(id) * 0.1;
     return (stats.leadership || 0) * 1.2 + Math.max(stats.war || 0, stats.intelligence || 0) + fieldPower(id) * 0.1;
@@ -2048,17 +2422,25 @@
         const other = female === a ? b : a;
         const femaleGroupIndex = groupIndex.get(female);
         const otherGroupIndex = groupIndex.get(other);
-        const targetIndex = groups[femaleGroupIndex]?.length >= 2 ? femaleGroupIndex : otherGroupIndex;
+        const specTargetGroup = groups[spec.targetIndex] || [];
+        const targetIndex =
+          specTargetGroup.includes(female) || specTargetGroup.includes(other)
+            ? spec.targetIndex
+            : groups[femaleGroupIndex]?.length >= 2
+              ? femaleGroupIndex
+              : otherGroupIndex;
         if (targetIndex < 0 || !groups[targetIndex]) continue;
+        const anchorId = groups[targetIndex].includes(female) ? female : other;
         pushAdjustmentCandidate(rows, {
           kind: "marriage",
           priority: spec.priority,
           priorityLabel: spec.needKey === "support" ? "범위 버프 보강" : spec.priorityLabel,
           ids: [other, female],
-          anchorId: targetIndex === femaleGroupIndex ? female : other,
-          sourceIds: [targetIndex === femaleGroupIndex ? other : female],
+          anchorId,
+          sourceIds: [anchorId === female ? other : female],
           targetIndex,
           needKey: spec.needKey,
+          needLabel: spec.needLabel,
           sourceRank: spec.sourceRank,
           sourceClass: spec.sourceClass,
           reason: "미혼 상태 가정",
@@ -2095,6 +2477,7 @@
             sourceIds: [female],
             targetIndex,
             needKey: "support",
+            needLabel: "지원",
             sourceRank: preferred ? 0 : 2,
             sourceClass: preferred ? "보조 후보" : "응원/악주 여무장",
             reason: `${displayName(target[0])} 집단에 응원/악주 버프 보강`,
@@ -2127,7 +2510,11 @@
     const sourcePower = sourceIds.reduce((sum, id) => sum + fieldPower(id), 0);
     const badges = relationBadges(pairStats);
     if (spec.kind === "marriage") badges.unshift("미혼 가정");
-    if (spec.needKey === "support" && !badges.includes("응원/악주")) badges.push("응원/악주");
+    if (spec.needLabel && !badges.includes(spec.needLabel)) badges.push(spec.needLabel);
+    if (spec.needKey === "morale" && !badges.includes("응원/악주")) badges.push("응원/악주");
+    const needScore = spec.needKey
+      ? sourceIds.reduce((sum, id) => sum + roleNeedScore(id, spec.needKey), 0) * 0.25
+      : 0;
 
     rows.push({
       ...spec,
@@ -2140,6 +2527,7 @@
       anchorReach,
       score:
         sourcePower +
+        needScore +
         anchorReach.score * 0.55 +
         pairStats.newPairs * 140 +
         pairStats.upgradedPairs * 70 +
@@ -2225,6 +2613,40 @@
     return groupA !== undefined && groupA >= 0 && groupA === groupB;
   }
 
+  function recommendationLayoutPlan(spec, ids, planOptions, basePlan) {
+    const groups = (basePlan.groups || []).map((group) => [...group]);
+    const unassigned = [...(basePlan.unassigned || [])];
+    const memberIndex = formationMemberIndex(groups, unassigned);
+    const targetIndex = groups[spec.targetIndex] ? spec.targetIndex : memberIndex.get(spec.anchorId);
+    if (targetIndex === undefined || targetIndex < 0 || !groups[targetIndex]) return null;
+
+    const targetIds = new Set(groups[targetIndex]);
+    const sourceIds = [...new Set(spec.sourceIds || [])].filter((id) => ids.includes(id) && !targetIds.has(id));
+    if (!sourceIds.length) return null;
+    if (groups[targetIndex].length + sourceIds.length > (planOptions.maxSize || MAX_GROUP_SIZE)) return null;
+
+    const sourceSet = new Set(sourceIds);
+    const nextGroups = groups.map((group, index) => {
+      const kept = group.filter((id) => !sourceSet.has(id));
+      return index === targetIndex ? [...kept, ...sourceIds] : kept;
+    });
+    const nextUnassigned = sortUnassigned(unassigned.filter((id) => !sourceSet.has(id)));
+    const cleanGroups = nextGroups.filter((group) => group.length);
+
+    for (let index = 0; index < nextGroups.length; index += 1) {
+      const group = nextGroups[index];
+      if (!group.length) continue;
+      if (group.length === 1 && groups[index]?.length > 1) return null;
+      if (group.length >= 2 && !groupMetrics(group).edges.length) return null;
+    }
+
+    return {
+      groups: cleanGroups,
+      unassigned: nextUnassigned,
+      targetCount: basePlan.targetCount || planOptions.targetCount || cleanGroups.length,
+    };
+  }
+
   function recommendationKeepsSourceWithAnchor(row) {
     const groupMap = formationMemberIndex(row.plan.groups || [], row.plan.unassigned || []);
     const anchorGroup = groupMap.get(row.anchorId);
@@ -2281,7 +2703,12 @@
   }
 
   function hydrateRecommendation(spec, ids, planOptions, basePlan) {
-    const plan = withVirtualOaths([spec.ids], () => planRoster(ids, planOptions));
+    const plan = withVirtualOaths([spec.ids], () =>
+      planOptions.preserveRecommendationLayout
+        ? recommendationLayoutPlan(spec, ids, planOptions, basePlan)
+        : planRoster(ids, planOptions),
+    );
+    if (!plan) return null;
     const baseStats = formationStats(basePlan.groups, basePlan.unassigned || []);
     const stats = formationStats(plan.groups, plan.unassigned || []);
     const stability = recommendationStability(basePlan, plan);
@@ -2319,7 +2746,7 @@
   }
 
   function isSupportRecommendation(row) {
-    return row.priorityLabel === "범위 버프 보강" || row.needKey === "support";
+    return row.priorityLabel === "범위 버프 보강" || ["support", "morale", "debuff"].includes(row.needKey);
   }
 
   function passesRecommendationFilters(row) {
@@ -2337,6 +2764,8 @@
     els.results.innerHTML = "";
     els.oathResults.innerHTML = "";
     els.warnings.innerHTML = "";
+    els.resultSummary?.replaceChildren();
+    els.resultSummary?.classList.add("hidden");
   }
 
   function renderWarnings(warnings) {
@@ -2348,6 +2777,42 @@
       fragment.appendChild(node);
     }
     els.warnings.replaceChildren(fragment);
+  }
+
+  function summaryChip(label, value, tone = "") {
+    const chip = document.createElement("div");
+    chip.className = `summary-chip${tone ? ` ${tone}` : ""}`;
+    const labelNode = document.createElement("span");
+    labelNode.textContent = label;
+    const valueNode = document.createElement("strong");
+    valueNode.textContent = value;
+    chip.append(labelNode, valueNode);
+    return chip;
+  }
+
+  function renderRosterSummary(ids, groups, unassigned, planOptions) {
+    if (!els.resultSummary) return;
+    const profiles = groups.map((group) => groupBattleProfile(group, ids));
+    const assignedCount = ids.length - unassigned.length;
+    const readyCount = profiles.filter((profile) => profile.battleReady).length;
+    const roleCompleteCount = profiles.filter((profile) => profile.roles.front && profile.roles.rear).length;
+    const siegeCount = profiles.filter((profile) => profile.roles.siege).length;
+    const supportCount = profiles.filter((profile) => profile.roles.support).length;
+    const guardCount = profiles.filter((profile) => profile.roles.guard).length;
+    const targetLabel =
+      planOptions.mode === "auto" ? `자동 ${planOptions.targetCount || groups.length}집단` : `${planOptions.targetCount}집단`;
+
+    els.resultSummary.replaceChildren(
+      summaryChip("편성", `${assignedCount}/${ids.length}명`, "summary-primary"),
+      summaryChip("집단", targetLabel),
+      summaryChip("전투 성립", `${readyCount}/${groups.length}집단`),
+      summaryChip("전열+후열", `${roleCompleteCount}집단`),
+      summaryChip("공성", `${siegeCount}집단`),
+      summaryChip("지원", `${supportCount}집단`),
+      summaryChip("호위", `${guardCount}집단`),
+      summaryChip("미편성", `${unassigned.length}명`, unassigned.length ? "summary-warning" : ""),
+    );
+    els.resultSummary.classList.remove("hidden");
   }
 
   function setResultTab(tab) {
@@ -2645,6 +3110,77 @@
     return (officer(id)?.formations || []).map((formation) => formation.ko || formation.name).filter(Boolean);
   }
 
+  function countedLabel(names, order = []) {
+    const counts = new Map();
+    for (const name of names.filter(Boolean)) counts.set(name, (counts.get(name) || 0) + 1);
+    return [...counts.entries()]
+      .sort(([aName, aCount], [bName, bCount]) => {
+        const aOrder = order.includes(aName) ? order.indexOf(aName) : order.length;
+        const bOrder = order.includes(bName) ? order.indexOf(bName) : order.length;
+        return aOrder - bOrder || bCount - aCount || aName.localeCompare(bName, "ko");
+      })
+      .map(([name, count]) => (count > 1 ? `${name} ${count}` : name))
+      .join(", ");
+  }
+
+  function groupFormationRoleText(group, formationSet) {
+    const names = [];
+    for (const id of group) {
+      for (const name of officerFormationNames(id)) {
+        if (formationSet.has(name)) names.push(name);
+      }
+    }
+    return countedLabel(names, FORMATION_ORDER);
+  }
+
+  function groupTraitRoleText(group, traitSet) {
+    const names = [];
+    for (const id of group) {
+      for (const name of officerTraits(id)) {
+        if (traitSet.has(name)) names.push(name);
+      }
+    }
+    return countedLabel(names, [...traitSet]);
+  }
+
+  function roleBadge(label, detail, active = true) {
+    const badge = document.createElement("div");
+    badge.className = "group-role-badge";
+    if (!active) badge.classList.add("is-empty");
+    const labelNode = document.createElement("span");
+    labelNode.textContent = label;
+    const detailNode = document.createElement("strong");
+    detailNode.textContent = detail || "-";
+    badge.append(labelNode, detailNode);
+    return badge;
+  }
+
+  function renderGroupRoleSummary(group) {
+    const profile = groupBattleProfile(group);
+    const block = document.createElement("section");
+    block.className = "group-role-summary";
+    const label = document.createElement("div");
+    label.className = "section-label";
+    label.textContent = "역할 요약";
+    block.appendChild(label);
+
+    const front = groupFormationRoleText(group, FRONT_FORMATIONS);
+    const rear = groupFormationRoleText(group, REAR_FORMATIONS);
+    const siege = groupFormationRoleText(group, SIEGE_FORMATIONS);
+    const support = groupTraitRoleText(group, BATTLE_SUPPORT_TRAITS);
+    const guard = groupTraitRoleText(group, new Set(["호위"]));
+
+    block.append(
+      roleBadge("코어", displayName(profile.core), profile.roles.battleCore),
+      roleBadge("전열", front, profile.roles.front),
+      roleBadge("후열", rear, profile.roles.rear),
+      roleBadge("공성", siege, profile.roles.siege),
+      roleBadge("지원", support, profile.roles.support),
+      roleBadge("호위", guard, profile.roles.guard),
+    );
+    return block;
+  }
+
   function formationSummary(group) {
     const byFormation = new Map();
     for (const id of group) {
@@ -2890,7 +3426,7 @@
 
     const memberList = card.querySelector(".member-list");
     for (const id of group) memberList.appendChild(memberChip(id, metrics.buff, { draggable: options.draggableMembers }));
-    memberList.after(renderGroupFormationSummary(group));
+    memberList.after(renderGroupRoleSummary(group), renderGroupFormationSummary(group));
 
     const relationList = card.querySelector(".relation-list");
     relationList.classList.add("relation-grid");
@@ -3124,15 +3660,17 @@
       formationLabel.className = "section-label";
       formationLabel.textContent = "예상 편성";
       formationList.appendChild(formationLabel);
-      recommendation.plan.groups.forEach((group, groupIndex) => {
-        renderFormationPreviewCard(group, groupIndex, formationList);
+      withVirtualOaths([recommendation.ids], () => {
+        recommendation.plan.groups.forEach((group, groupIndex) => {
+          renderFormationPreviewCard(group, groupIndex, formationList);
+        });
+        renderUnassignedPreviewCard(
+          recommendation.plan.unassigned || [],
+          formationList,
+          recommendation.plan.groups,
+          [...new Set(recommendation.plan.groups.flat().concat(recommendation.plan.unassigned || []))],
+        );
       });
-      renderUnassignedPreviewCard(
-        recommendation.plan.unassigned || [],
-        formationList,
-        recommendation.plan.groups,
-        [...new Set(recommendation.plan.groups.flat().concat(recommendation.plan.unassigned || []))],
-      );
       card.appendChild(formationList);
 
       els.oathResults.appendChild(card);
@@ -3161,6 +3699,7 @@
     const plan = planRoster(ids, planOptions);
     const groups = plan.groups;
     const unassigned = plan.unassigned || [];
+    if (planOptions.mode === "auto") planOptions.targetCount = plan.targetCount;
     if (planOptions.mode === "count" && groups.length !== planOptions.targetCount) {
       warnings.push(`목표 ${planOptions.targetCount}집단에 최대한 가깝게 ${groups.length}집단으로 편성했습니다.`);
     }
@@ -3181,6 +3720,8 @@
     return {
       groups: currentRosterState.groups.map((group) => [...group]),
       unassigned: [...currentRosterState.unassigned],
+      targetCount: currentRosterState.planOptions?.targetCount,
+      manual: currentRosterState.manual,
     };
   }
 
@@ -3196,8 +3737,13 @@
     const groups = plan.groups;
     const unassigned = plan.unassigned || [];
     const total = totalScore(groups);
+    const recommendationPlanOptions = currentRosterState.manual
+      ? { ...planOptions, preserveRecommendationLayout: true }
+      : planOptions;
     const allOathRecommendations =
-      activeResultTab === "oath" ? recommendOathSets(ids, planOptions, plan, RECOMMENDATION_LIMIT * 4) : [];
+      activeResultTab === "oath"
+        ? recommendOathSets(ids, recommendationPlanOptions, plan, RECOMMENDATION_LIMIT * 4)
+        : [];
     const oathRecommendations = allOathRecommendations.filter(passesRecommendationFilters).slice(0, RECOMMENDATION_LIMIT);
     const warnings = [...currentRosterState.warnings];
     const oversizeGroups = groups
@@ -3205,13 +3751,14 @@
       .filter((group) => group.size > planOptions.maxSize);
     if (oversizeGroups.length) {
       warnings.push(
-        `수동 편성으로 상한 ${planOptions.maxSize}명을 넘은 집단: ${oversizeGroups
+        `수동 편성으로 집단별 ${planOptions.maxSize}명을 넘은 집단: ${oversizeGroups
           .map((group) => `${group.index + 1}집단 ${group.size}명`)
           .join(", ")}`,
       );
     }
 
     if (activeResultTab === "formation") {
+      renderRosterSummary(ids, groups, unassigned, planOptions);
       groups.forEach((group, index) => {
         const topNames = group
           .slice(0, 3)
@@ -3228,6 +3775,7 @@
         draggableMembers: true,
       });
     } else {
+      els.resultSummary?.classList.add("hidden");
       renderOathRecommendations(oathRecommendations, allOathRecommendations.length);
     }
 
@@ -3239,7 +3787,10 @@
       els.scoreBadge.textContent = `${oathRecommendations.length}건`;
     } else {
       els.resultTitle.textContent = "보유 장수 편성 결과";
-      els.resultMeta.textContent = `${ids.length}명 · 목표 ${planOptions.targetCount}집단 · 상한 ${planOptions.maxSize}명 · 코어 고정 ${fixedCoreIds.length}명 · 미편성 ${unassigned.length}명${currentRosterState.manual ? " · 수동 편성" : ""}`;
+      const targetLabel =
+        planOptions.mode === "auto" ? `자동 ${planOptions.targetCount || groups.length}집단` : `목표 ${planOptions.targetCount}집단`;
+      const autoLimitLabel = planOptions.mode === "auto" ? ` · 자동 최대 ${planOptions.maxGroupCount}집단` : "";
+      els.resultMeta.textContent = `${ids.length}명 · ${targetLabel}${autoLimitLabel} · 집단별 ${planOptions.maxSize}명 · 코어 고정 ${fixedCoreIds.length}명 · 미편성 ${unassigned.length}명${currentRosterState.manual ? " · 수동 편성" : ""}`;
       els.scoreBadge.textContent = `${Math.round(total)}`;
     }
   }
@@ -3330,16 +3881,119 @@
     els.scoreBadge.textContent = `${rows.length}`;
   }
 
-  function renderSingle() {
+  function officerDexRows() {
+    const query = normalizeSingleSearch(els.centerInput?.value || "");
+    return singleOfficerOptions.filter((item) => singleOfficerMatches(item, query));
+  }
+
+  function officerDexStatCell(value) {
+    const cell = document.createElement("span");
+    cell.className = "officer-dex-stat";
+    cell.textContent = String(value || 0);
+    return cell;
+  }
+
+  function officerDexChipList(className) {
+    const cell = document.createElement("div");
+    cell.className = `officer-dex-chip-list ${className}`;
+    return cell;
+  }
+
+  function renderOfficerDexList() {
     clearResults();
     setResultTabsVisible(false);
-    const { ids, warnings } = resolveNames([els.centerInput.value.trim()]);
-    if (!ids.length) {
-      renderEmpty("장수를 검색하세요.");
-      return;
+    activeOfficerDetailId = null;
+    const rows = officerDexRows();
+
+    const table = document.createElement("div");
+    table.className = "officer-dex-table";
+    table.classList.toggle("is-compact", rows.length <= 5);
+    const header = document.createElement("div");
+    header.className = "officer-dex-row officer-dex-header";
+    header.append(
+      singleSearchCell("이름", "officer-dex-name"),
+      ...STAT_FIELDS.map(([, label]) => singleSearchCell(label, "officer-dex-stat")),
+      singleSearchCell("개성", "officer-dex-traits"),
+      singleSearchCell("진형", "officer-dex-formations"),
+    );
+    table.appendChild(header);
+
+    if (!rows.length) {
+      const empty = document.createElement("div");
+      empty.className = "single-officer-empty";
+      empty.textContent = "검색 결과 없음";
+      table.appendChild(empty);
+    } else {
+      const fragment = document.createDocumentFragment();
+      for (const item of rows) {
+        const row = document.createElement("button");
+        row.className = "officer-dex-row officer-dex-option";
+        row.type = "button";
+        row.dataset.officerId = String(item.id);
+        row.addEventListener("click", () => showOfficerDetail(item.id));
+
+        const stats = item.stats || {};
+        const traitCell = officerDexChipList("officer-dex-traits");
+        if (item.traits?.length) {
+          for (const trait of item.traits) {
+            const chip = document.createElement("span");
+            chip.className = `trait-name-box officer-dex-trait trait-${trait.color || "none"}`;
+            chip.textContent = trait.name;
+            traitCell.appendChild(chip);
+          }
+        } else {
+          traitCell.textContent = "-";
+        }
+
+        const formationCell = officerDexChipList("officer-dex-formations");
+        const formations = officerFormationNames(item.id);
+        if (formations.length) {
+          for (const name of formations) {
+            const chip = document.createElement("span");
+            chip.className = "formation-chip officer-dex-formation";
+            chip.textContent = name;
+            formationCell.appendChild(chip);
+          }
+        } else {
+          formationCell.textContent = "-";
+        }
+
+        row.append(
+          singleSearchCell(displayName(item.id), "officer-dex-name"),
+          ...STAT_FIELDS.map(([key]) => officerDexStatCell(stats[key])),
+          traitCell,
+          formationCell,
+        );
+        fragment.appendChild(row);
+      }
+      table.appendChild(fragment);
     }
 
-    const center = ids[0];
+    els.results.appendChild(table);
+    els.resultTitle.textContent = "장수 도감";
+    els.resultMeta.textContent = `장수 ${rows.length}/${singleOfficerOptions.length}명 · 엑셀 순서`;
+    els.scoreBadge.textContent = `${rows.length}`;
+  }
+
+  function renderOfficerDexDetail(center, warnings = []) {
+    clearResults();
+    setResultTabsVisible(false);
+    activeOfficerDetailId = center;
+
+    const toolbar = document.createElement("div");
+    toolbar.className = "officer-detail-toolbar";
+    const backButton = document.createElement("button");
+    backButton.className = "ghost-button officer-back-button";
+    backButton.type = "button";
+    backButton.textContent = "← 목록";
+    backButton.addEventListener("click", () => {
+      els.centerInput.value = officerDexListQuery;
+      activeOfficerDetailId = null;
+      renderOfficerDexList();
+    });
+    toolbar.appendChild(backButton);
+    els.results.appendChild(toolbar);
+
     const depth = Math.max(1, Math.min(4, Number(els.hopDepth.value) || 4));
     const paths = findPaths(center, depth);
     const groupPaths = paths
@@ -3355,6 +4009,34 @@
     els.resultTitle.textContent = "장수 도감";
     els.resultMeta.textContent = `${displayName(center)} · ${depth}단계 · ☆/◎/○ 포함`;
     els.scoreBadge.textContent = `${groupPaths.length}`;
+  }
+
+  function showOfficerDetail(id) {
+    const item = officer(id);
+    if (!item) return;
+    officerDexListQuery = els.centerInput.value;
+    els.centerInput.value = displayName(id);
+    renderOfficerDexDetail(id);
+  }
+
+  function openOfficerDetailFromSearch() {
+    const text = els.centerInput.value.trim();
+    officerDexListQuery = text;
+    const { ids, warnings } = text ? resolveNames([text]) : { ids: [], warnings: [] };
+    const fallback = !ids.length && text ? officerDexRows()[0]?.id : null;
+    const id = ids[0] || fallback;
+    if (!id) {
+      activeOfficerDetailId = null;
+      renderOfficerDexList();
+      return;
+    }
+    els.centerInput.value = displayName(id);
+    renderOfficerDexDetail(id, warnings);
+  }
+
+  function renderOfficerDex() {
+    if (activeOfficerDetailId) renderOfficerDexDetail(activeOfficerDetailId);
+    else renderOfficerDexList();
   }
 
   function findPaths(center, maxDepth) {
@@ -3464,19 +4146,17 @@
 
   function renderDex() {
     if (activeDexTab === "trait") renderTraitDex();
-    else renderSingle();
+    else renderOfficerDex();
   }
 
   function setDexTab(tab) {
     activeDexTab = tab === "trait" ? "trait" : "officer";
-    closeSingleOfficerDropdown();
     for (const button of els.dexTabButtons) button.classList.toggle("active", button.dataset.dexTab === activeDexTab);
     for (const panel of els.dexPanels) panel.classList.toggle("hidden", panel.dataset.dexPanel !== activeDexTab);
     if (mode === "single") renderDex();
   }
 
   function setMode(nextMode) {
-    closeSingleOfficerDropdown();
     mode = nextMode;
     for (const button of els.segments) button.classList.toggle("active", button.dataset.mode === mode);
     for (const panel of els.panels) panel.classList.toggle("hidden", panel.dataset.panel !== mode);
@@ -3507,25 +4187,27 @@
       updateRosterLimitControls();
       invalidateRosterAnalysis();
     });
-    els.centerInput.addEventListener("focus", openSingleOfficerDropdown);
     els.centerInput.addEventListener("input", () => {
-      singleSearchActiveIndex = 0;
-      openSingleOfficerDropdown();
+      officerDexListQuery = els.centerInput.value;
+      activeOfficerDetailId = null;
+      if (mode === "single" && activeDexTab === "officer") renderOfficerDexList();
     });
-    els.centerInput.addEventListener("keydown", handleSingleSearchKeydown);
-    document.addEventListener("pointerdown", (event) => {
-      if (!els.singleSearchField?.contains(event.target)) closeSingleOfficerDropdown();
+    els.centerInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && mode === "single" && activeDexTab === "officer") {
+        event.preventDefault();
+        openOfficerDetailFromSearch();
+      }
     });
     els.traitInput?.addEventListener("input", () => {
       if (mode === "single" && activeDexTab === "trait") renderTraitDex();
     });
-    for (const input of [els.groupCount, els.maxSize]) {
-      input.addEventListener("change", () => {
+    els.groupCount.addEventListener("change", () => {
+      if (!isAutoGroupCountValue(els.groupCount.value)) {
         rosterLimitValues.groupCount = Number(els.groupCount.value) || rosterLimitValues.groupCount;
-        rosterLimitValues.maxSize = Number(els.maxSize.value) || rosterLimitValues.maxSize;
-        invalidateRosterAnalysis();
-      });
-    }
+      }
+      updateRosterLimitControls();
+      invalidateRosterAnalysis();
+    });
     for (const input of els.recommendationFilterInputs) {
       input.addEventListener("change", () => {
         recommendationFilterValues[input.dataset.recFilter] = input.checked;
@@ -3539,9 +4221,7 @@
         els.rosterInput.value = sample.text;
         els.coreInput.value = "";
         rosterLimitValues.groupCount = sample.groupCount;
-        rosterLimitValues.maxSize = sample.maxSize;
         els.groupCount.value = sample.groupCount;
-        els.maxSize.value = sample.maxSize;
         updateRosterLimitControls();
         updateDuplicateSelectors();
         invalidateRosterAnalysis();
@@ -3555,6 +4235,7 @@
     for (const button of els.runButtons) {
       button.addEventListener("click", () => {
         if (mode === "roster") analyzeRoster();
+        else if (activeDexTab === "officer") openOfficerDetailFromSearch();
         else renderDex();
       });
     }

@@ -99,6 +99,8 @@ function exposeAppApi(appScript) {
     planRoster,
     groupMetrics,
     totalScore,
+    autoRosterPlanCandidates: typeof autoRosterPlanCandidates === "function" ? autoRosterPlanCandidates : null,
+    evaluateAutoRosterPlan: typeof evaluateAutoRosterPlan === "function" ? evaluateAutoRosterPlan : null,
     classifyUnassigned,
     recommendOathSets,
     passesRecommendationFilters,
@@ -194,6 +196,7 @@ async function runRegression(source) {
       mode: "count",
       targetCount: sample.groupCount,
       maxSize: sample.maxSize,
+      maxGroupCount: sample.maxGroupCount,
       fixedCoreIds: [],
     };
     const plan = api.planRoster(resolved.ids, options);
