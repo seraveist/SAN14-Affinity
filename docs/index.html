@@ -1,168 +1,147 @@
 <!doctype html>
 <html lang="ko">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="삼국지14CE 보유 장수 편성, 친애 관계 비교, 출진 후보와 진형 확인">
     <title>삼국지14 친애 편성기</title>
     <script>
       (() => {
-        const stored = localStorage.getItem("san14-theme");
-        const systemDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
-        document.documentElement.dataset.theme = stored || (systemDark ? "dark" : "light");
+        let theme;
+        try { theme = localStorage.getItem("san14-theme"); } catch {}
+        document.documentElement.dataset.theme = theme === "dark" || theme === "light"
+          ? theme : (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
       })();
     </script>
-    <link rel="stylesheet" href="./styles.css?v=1.4.2-local-target-count" />
+    <link rel="stylesheet" href="./styles.css?v=3">
   </head>
   <body>
-    <main class="lab-shell">
-      <header class="topbar">
-        <div class="brand">
-          <span class="brand-mark">14</span>
-          <div class="brand-copy">
-            <h1>삼국지14 친애 편성기</h1>
-            <p>v1.4.2</p>
+    <a class="skip-link" href="#content">본문으로 이동</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand"><span class="brand-mark" aria-hidden="true">14</span><span>삼국지14 친애 편성기</span></div>
+        <nav class="main-nav" aria-label="주 메뉴">
+          <button type="button" data-view="planner" aria-current="page">편성</button>
+          <button type="button" data-view="dex">장수 찾기</button>
+        </nav>
+        <button type="button" id="themeToggle" class="theme-button" aria-label="다크 테마로 변경">☾</button>
+      </div>
+    </header>
+
+    <main id="content" class="page">
+      <section id="planner-panel" aria-labelledby="planner-title">
+        <div class="page-heading">
+          <div>
+            <h1 id="planner-title" tabindex="-1">보유 장수 편성</h1>
+            <p>명단으로 편성을 만들고, 친애 관계와 출진 후보를 확인하세요.</p>
           </div>
+          <button type="button" id="dataButton" class="button quiet">데이터 근거</button>
         </div>
 
-        <div class="segmented" role="tablist" aria-label="분석 모드">
-          <button class="segment active" type="button" data-mode="roster">보유 장수 편성</button>
-          <button class="segment" type="button" data-mode="single">도감</button>
-        </div>
-
-        <button id="themeToggle" class="theme-toggle" type="button" aria-label="다크 테마로 변경">☾</button>
-      </header>
-
-      <section class="control-workbench" aria-label="입력 패널">
-        <section class="form-section roster-panel" data-panel="roster">
-          <div class="input-card roster-entry">
-            <div class="input-card-header">
-              <label for="rosterInput">보유 장수</label>
-              <details class="preset-popover">
-                <summary>장수 프리셋</summary>
-                <div class="preset-panel" role="group" aria-label="장수 프리셋">
-                  <span class="preset-title">장수 프리셋</span>
-                  <div class="sample-rosters">
-                    <button class="ghost-button sample-button" type="button" data-sample-roster="cao">조조</button>
-                    <button class="ghost-button sample-button" type="button" data-sample-roster="liu">유비</button>
-                    <button class="ghost-button sample-button" type="button" data-sample-roster="sun">손권</button>
-                    <button class="ghost-button sample-button" type="button" data-sample-roster="yuan">원소</button>
-                  </div>
-                </div>
-              </details>
-            </div>
-            <textarea id="rosterInput" spellcheck="false" autocomplete="off"></textarea>
-          </div>
-
-          <div class="input-card roster-options">
-            <label for="coreInput">코어 고정</label>
-            <textarea id="coreInput" class="compact-textarea" spellcheck="false" autocomplete="off"></textarea>
-            <div class="roster-limits">
-              <label class="limit-field" for="groupCount">
-                <span>목표 집단 수</span>
-                <select id="groupCount">
-                  <option value="auto" selected>자동분할</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                  <option value="6">6</option>
-                  <option value="7">7</option>
-                  <option value="8">8</option>
-                  <option value="9">9</option>
-                  <option value="10">10</option>
-                </select>
-              </label>
-              <button id="runButton" class="run-button roster-run-button" type="button" data-run-action>분석</button>
-            </div>
-          </div>
-
-          <div id="duplicateSelectors" class="duplicate-selectors hidden"></div>
+        <section class="surface compact-roster" id="rosterCompact" aria-label="보유 장수 명단" hidden>
+          <p><strong>보유 장수 명단</strong> <span class="muted" id="rosterCompactText"></span></p>
+          <button type="button" class="button quiet small" id="editRoster">명단 수정</button>
         </section>
 
-        <section class="form-section single-panel hidden" data-panel="single">
-          <div id="dexTabs" class="dex-tabs" role="tablist" aria-label="도감 보기">
-            <button class="dex-tab active" type="button" data-dex-tab="officer">장수 도감</button>
-            <button class="dex-tab" type="button" data-dex-tab="trait">개성 도감</button>
+        <form novalidate id="rosterForm" class="surface roster-form">
+          <div class="form-heading">
+            <label class="section-title" for="rosterInput">보유 장수 명단</label>
+            <details class="presets">
+              <summary>프리셋 불러오기</summary>
+              <div id="presets" class="preset-list"></div>
+            </details>
           </div>
-
-          <div class="input-card single-entry" data-dex-panel="officer">
-            <div class="single-label-row">
-              <label for="centerInput">장수 검색</label>
-              <label for="hopDepth">탐색 단계</label>
+          <div class="form-grid">
+            <div class="name-entry">
+              <textarea id="rosterInput" rows="4" autocomplete="off" spellcheck="false"
+                placeholder="유비, 관우, 장비, 조운, 제갈량" aria-describedby="rosterHint reviewMessage" style="resize: none"></textarea>
+              <p id="rosterHint" class="help">쉼표, 공백 또는 줄바꿈으로 장수 이름을 구분합니다.</p>
             </div>
-            <div class="single-row">
-              <div class="single-search-field" id="singleSearchField">
-                <input
-                  id="centerInput"
-                  type="search"
-                  autocomplete="off"
-                />
-              </div>
-              <input id="hopDepth" type="number" min="1" max="4" value="4" />
-              <button class="run-button" type="button" data-run-action>상세</button>
+            <div class="settings">
+              <label for="groupCount">목표 집단 수</label>
+              <select id="groupCount">
+                <option value="auto">자동분할</option>
+              </select>
+              <label for="coreInput">고정 코어 <span class="muted">선택</span></label>
+              <input id="coreInput" type="text" autocomplete="off" spellcheck="false" placeholder="예: 유비, 관우">
             </div>
           </div>
-
-          <div class="input-card trait-entry hidden" data-dex-panel="trait">
-            <label for="traitInput">개성 검색</label>
-            <input id="traitInput" autocomplete="off" />
+          <div id="nameReview" class="name-review" hidden>
+            <p id="reviewMessage" class="help"></p>
+            <div id="duplicateSelectors" class="fields"></div>
+            <ul id="reviewWarnings" class="warnings" aria-label="명단 확인 결과" hidden></ul>
           </div>
-        </section>
+          <div class="form-actions">
+            <button class="button" id="checkNames" type="button">명단 확인</button>
+            <button class="button primary" id="createPlan" type="submit">초안 만들기</button>
+            <span id="busyMessage" class="help" aria-live="polite"></span>
+          </div>
+        </form>
+
+        <div id="workspace"></div>
       </section>
 
-      <section class="result-pane">
-        <div class="result-header">
+      <section id="dex-panel" aria-labelledby="dex-title" hidden>
+        <div class="page-heading">
           <div>
-            <h2 id="resultTitle">보유 장수 편성 결과</h2>
-            <p id="resultMeta">보유 장수를 입력하고 분석하세요.</p>
+            <h1 id="dex-title" tabindex="-1">장수 찾기</h1>
+            <p>이름, 개성, 진형으로 찾고 편성 명단에 추가할 수 있습니다.</p>
           </div>
-          <div id="scoreBadge" class="score-badge">READY</div>
         </div>
-
-        <div id="resultTabs" class="result-tabs" role="tablist" aria-label="결과 보기">
-          <button class="result-tab active" type="button" data-result-tab="formation">편성 결과</button>
-          <button class="result-tab" type="button" data-result-tab="oath">의형제/결혼 추천</button>
+        <div class="surface dex-filter">
+          <div class="search-field">
+            <label for="dexSearch">검색</label>
+            <div class="search-row">
+              <input id="dexSearch" type="search" autocomplete="off" placeholder="예: 관우, 호위, 안행">
+              <button id="clearSearch" class="button quiet" type="button" aria-label="검색어 지우기" hidden>지우기</button>
+            </div>
+          </div>
+          <div class="filter-row">
+            <div class="segmented" id="dexKinds" role="group" aria-label="검색 대상">
+              <button data-dex-kind="officers" type="button" aria-pressed="true">장수</button>
+              <button data-dex-kind="traits" type="button" aria-pressed="false">개성</button>
+              <button data-dex-kind="formations" type="button" aria-pressed="false">진형</button>
+            </div>
+            <label class="check"><input id="ownedOnly" type="checkbox"> 보유 장수만</label>
+            <label for="dexSort" class="inline-label">정렬
+              <select id="dexSort">
+                <option value="id">장수 번호순</option>
+                <option value="name">이름순</option>
+                <option value="leadership">통솔순</option>
+                <option value="war">무력순</option>
+                <option value="intelligence">지력순</option>
+                <option value="politics">정치순</option>
+                <option value="charm">매력순</option>
+              </select>
+            </label>
+          </div>
         </div>
-
-        <div id="recommendationFilters" class="recommendation-filters hidden" aria-label="추천 필터">
-          <label class="recommendation-filter">
-            <input type="checkbox" data-rec-filter="oath" checked />
-            <span>의형제</span>
-          </label>
-          <label class="recommendation-filter">
-            <input type="checkbox" data-rec-filter="marriage" checked />
-            <span>결혼</span>
-          </label>
-          <label class="recommendation-filter">
-            <input type="checkbox" data-rec-filter="rescue" checked />
-            <span>미편성 구제</span>
-          </label>
-          <label class="recommendation-filter">
-            <input type="checkbox" data-rec-filter="support" checked />
-            <span>응원/악주 보강</span>
-          </label>
-        </div>
-
-        <div id="resultSummary" class="result-summary hidden"></div>
-        <div id="warnings" class="warnings"></div>
-        <div id="results" class="results"></div>
-        <div id="oathResults" class="results hidden"></div>
+        <div id="dexResults"></div>
       </section>
     </main>
 
-    <template id="groupTemplate">
-      <article class="group-card">
-        <div class="group-top">
-          <h3></h3>
-          <span class="group-score"></span>
-        </div>
-        <div class="member-list"></div>
-        <div class="relation-list"></div>
-      </article>
-    </template>
+    <dialog id="detailDialog" class="detail-dialog" aria-labelledby="dialogTitle">
+      <div class="dialog-head">
+        <h2 id="dialogTitle" tabindex="-1"></h2>
+        <button id="closeDialog" type="button" class="button quiet">닫기</button>
+      </div>
+      <div id="dialogBody"></div>
+    </dialog>
+    <p id="status" class="status" role="status" aria-atomic="true"></p>
+    <footer class="footer">
+      <span>삼국지14 친애 편성기</span>
+      <a href="https://www.gamecity.ne.jp/manual/sangokushi14-pk/ce/kor/5110.html" target="_blank" rel="noopener">CE 공식 전투 매뉴얼</a>
+    </footer>
 
-    <script src="./data.js?v=1.4"></script>
-    <script src="./app.js?v=1.4.2-local-target-count"></script>
+    <script src="./data.js?v=4"></script>
+    <script src="./model.js?v=4"></script>
+    <script src="./roster.js?v=2"></script>
+    <script src="./planner.js?v=4"></script>
+    <script src="./recommendations.js?v=2"></script>
+    <script src="./campaign.js?v=4"></script>
+    <script src="./ui.js?v=4"></script>
+    <script src="./formation-view.js?v=4"></script>
+    <script src="./dex.js?v=4"></script>
+    <script src="./app.js?v=4"></script>
   </body>
 </html>

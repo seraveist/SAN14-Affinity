@@ -1,7 +1,9 @@
+import argparse
 import json
 import os
 from collections import defaultdict
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from openpyxl import load_workbook
 
@@ -11,6 +13,9 @@ REPO_ROOT = ROOT.parent
 LEGACY_AFFINITY_PATH = Path(r"C:\Users\User\Downloads\affinity_index.json")
 LEGACY_WORKBOOK_PATH = Path(r"C:\Users\User\Downloads\삼국지14_전체무장_공유(통합본)의 사본.xlsx")
 OUT = ROOT / "data.js"
+PROFILE_DATA = ROOT / "profile_data.json"
+CE_TRAITS = ROOT / "ce_traits.json"
+CE_AFFINITY = ROOT / "ce_affinity.json"
 
 TRAIT_COLOR = {
     "FFFFF2CC": "gold",
@@ -86,18 +91,56 @@ def load_affinity():
         return matched or target_ids
 
     edges = []
+    missing = []
+    ambiguous = []
+    inferred = []
+    dislikes = []
+    grades = defaultdict(set)
     for edge in data["edges"]:
         relation = edge["relation"]
-        if relation not in POSITIVE:
+        if relation not in POSITIVE and relation != "X":
             continue
         source = int(edge["source_id"])
-        for target in disambiguate_targets(edge):
+        targets = [target for target in disambiguate_targets(edge) if target in officers]
+        record = {
+            "source": source,
+            "targetName": edge["target_name"],
+            "relation": relation,
+        }
+        if not targets:
+            missing.append(record)
+        elif len(targets) > 1:
+            ambiguous.append({**record, "targets": targets})
+        elif len(edge["target_ids"]) > 1:
+            inferred.append({**record, "targets": targets})
+
+        if relation == "X":
+            dislikes.extend({
+                "source": source, "target": target,
+                "needsReview": len(edge["target_ids"]) != 1,
+            } for target in targets)
+            continue
+
+        for target in targets:
             edges.append({
                 "source": source,
-                "target": int(target),
+                "target": target,
                 "relation": relation,
             })
-    return officers, by_name, edges
+            grades[source, target].add(relation)
+    conflicts = [
+        {"source": source, "target": target, "grades": sorted(values)}
+        for (source, target), values in grades.items()
+        if len(values) > 1
+    ]
+    return officers, by_name, edges, {
+        "source": "affinity_index.json",
+        "missing": missing,
+        "ambiguous": ambiguous,
+        "inferred": inferred,
+        "conflicts": conflicts,
+        "dislikes": dislikes,
+    }
 
 
 def load_workbook_data(officers):
@@ -142,13 +185,6 @@ def load_workbook_data(officers):
         officer["stats"] = stats
         officer["traits"] = traits
         officer["traitScore"] = trait_score
-        officer["primaryScore"] = max(
-            stats["leadership"] + stats["war"],
-            stats["leadership"] + stats["intelligence"],
-        ) + trait_score
-        officer["secondaryScore"] = stats["leadership"] + stats["politics"] + trait_score
-        officer["thirdScore"] = stats["intelligence"] + stats["politics"] + trait_score
-        officer["fourthScore"] = stats["leadership"] + trait_score
 
     for row in range(2, raw.max_row + 1):
         oid = raw.cell(row, 1).value
@@ -163,26 +199,63 @@ def load_workbook_data(officers):
             continue
         officer["gender"] = raw.cell(row, 3).value
         officer["spouse"] = raw.cell(row, 30).value
+    wb.close()
 
 
-def main():
-    officers, by_name, edges = load_affinity()
+def build_payload():
+    officers, by_name, edges, relationship_evidence = load_affinity()
     load_workbook_data(officers)
+    profiles = json.loads(PROFILE_DATA.read_text(encoding="utf-8"))
+    for officer_id, officer in officers.items():
+        profile = profiles["officers"].get(str(officer_id), {})
+        officer.update((key, value) for key, value in profile.items() if key != "stats")
+        stats = officer["stats"]
+        stats.update(profile.get("stats", {}))
+        trait_score = officer["traitScore"]
+        officer["primaryScore"] = stats["leadership"] + max(stats["war"], stats["intelligence"]) + trait_score
+        officer["secondaryScore"] = stats["leadership"] + stats["politics"] + trait_score
+        officer["thirdScore"] = stats["intelligence"] + stats["politics"] + trait_score
+        officer["fourthScore"] = stats["leadership"] + trait_score
 
-    payload = {
+    return {
         "metadata": {
             "title": "삼국지14 장수 편성기",
             "relationTypes": ["☆", "◎", "○"],
             "femaleDefaultMarried": True,
+            "profileData": profiles["metadata"],
         },
         "officers": officers,
         "byName": dict(sorted(by_name.items())),
         "edges": edges,
+        "traitDescriptions": profiles["traitDescriptions"],
+        "relationshipEvidence": relationship_evidence,
+        "ceAffinity": json.loads(CE_AFFINITY.read_text(encoding="utf-8")),
+        "ceTraits": json.loads(CE_TRAITS.read_text(encoding="utf-8")),
+        "presets": json.loads((ROOT / "regression_samples.json").read_text(encoding="utf-8")),
     }
 
-    text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    with OUT.open("w", encoding="utf-8", newline="\n") as out:
-        out.write(f"window.SAN14_DATA = {text};\n")
+
+def main():
+    parser = argparse.ArgumentParser(description="Build the browser's officer and relationship data.")
+    parser.add_argument("--check", action="store_true", help="check data.js without changing it")
+    args = parser.parse_args()
+    text = json.dumps(build_payload(), ensure_ascii=False, separators=(",", ":"))
+    script = f"window.SAN14_DATA = {text};\n"
+    if args.check:
+        if not OUT.exists() or OUT.read_text(encoding="utf-8") != script:
+            parser.exit(1, f"{OUT.name} differs from its sources. Run docs/build_data.py.\n")
+        print(f"{OUT.name} matches its sources.")
+        return
+
+    temporary = None
+    try:
+        with NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", dir=ROOT, delete=False) as out:
+            temporary = Path(out.name)
+            out.write(script)
+        os.replace(temporary, OUT)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     print(f"wrote {OUT} ({OUT.stat().st_size:,} bytes)")
 
 

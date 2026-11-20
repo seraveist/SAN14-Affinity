@@ -1,6 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
+import "./model.js";
+import "./roster.js";
+import "./planner.js";
+import "./recommendations.js";
 
 class FakeClassList {
   add() {}
@@ -54,6 +58,7 @@ const args = new Set(process.argv.slice(2));
 const outputJson = args.has("--json");
 const compare = args.has("--compare");
 const appSource = args.has("--app=head") ? "head" : "worktree";
+const baseline = "c5ba4fc3eb6f369d0af3aa676056901446485192";
 
 function fakeDocument() {
   const template = new FakeElement();
@@ -74,19 +79,14 @@ function fakeDocument() {
   };
 }
 
-async function loadData() {
-  const dataScript = await readFile("docs/data.js", "utf8");
+async function loadData(source) {
+  const dataScript = source === "head"
+    ? execFileSync("git", ["show", baseline + ":docs/data.js"], { encoding: "utf8" })
+    : await readFile("docs/data.js", "utf8");
   const sandbox = { window: {} };
   vm.createContext(sandbox);
   vm.runInContext(dataScript, sandbox);
   return sandbox.window.SAN14_DATA;
-}
-
-async function loadAppScript(source) {
-  if (source === "head") {
-    return execFileSync("git", ["show", "HEAD:docs/app.js"], { encoding: "utf8" });
-  }
-  return readFile("docs/app.js", "utf8");
 }
 
 function exposeAppApi(appScript) {
@@ -113,8 +113,15 @@ function exposeAppApi(appScript) {
 }
 
 async function createApi(source) {
-  const data = await loadData();
-  const appScript = exposeAppApi(await loadAppScript(source));
+  const data = await loadData(source);
+  if (source === "worktree") {
+    const model = globalThis.SAN14.createModel(data);
+    const roster = globalThis.SAN14.createRoster(model);
+    const planner = globalThis.SAN14.createPlanner(model, roster);
+    const recommendations = globalThis.SAN14.createRecommendations(model, planner);
+    return { ...model, ...roster, ...planner, ...recommendations, passesRecommendationFilters: () => true };
+  }
+  const appScript = exposeAppApi(execFileSync("git", ["show", baseline + ":docs/app.js"], { encoding: "utf8" }));
   const sandbox = {
     window: { SAN14_DATA: data },
     document: fakeDocument(),
@@ -127,9 +134,10 @@ async function createApi(source) {
 
 function groupSummary(api, group, index) {
   const metrics = api.groupMetrics(group);
+  const connections = metrics.linksByOfficer ?? metrics.buff;
   const members = [...group]
-    .sort((a, b) => (metrics.buff.get(b) || 0) - (metrics.buff.get(a) || 0) || api.primary(b) - api.primary(a))
-    .map((id) => `${api.displayName(id)}+${metrics.buff.get(id) || 0}`);
+    .sort((a, b) => (connections.get(b) || 0) - (connections.get(a) || 0) || api.primary(b) - api.primary(a))
+    .map((id) => `${api.displayName(id)}+${connections.get(id) || 0}`);
   const edges = metrics.edges
     .sort((a, b) => b.value - a.value || api.displayName(a.a).localeCompare(api.displayName(b.a), "ko"))
     .slice(0, 10)
@@ -284,8 +292,9 @@ if (compare) {
   if (outputJson) {
     console.log(JSON.stringify({ before, after }, null, 2));
   } else {
-    console.log(summarizeCompare(before, after, "HEAD", "worktree"));
+    console.log(summarizeCompare(before, after, baseline.slice(0, 7), "현재"));
   }
+  if (JSON.stringify(before) !== JSON.stringify(after)) process.exitCode = 1;
 } else {
   const results = await runRegression(appSource);
   if (outputJson) {
