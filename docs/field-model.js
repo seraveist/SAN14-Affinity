@@ -39,7 +39,7 @@
       ] },
   };
   api.fieldScenarios = scenarios;
-  api.createFieldModel = function(data, model, scene = "01") {
+  api.createFieldModel = function(data, model, scene = "01", decisions = []) {
     const initial = scenarios[scene];
     if (!initial) throw new Error("지원하지 않는 시나리오입니다.");
     const blocked = new Set(data.relationshipEvidence.dislikes.filter(r => !r.needsReview).map(r => pair(r
@@ -83,6 +83,30 @@
         for (const b of bs) likes.get(+a).add(b);
       }
     const cache = new Map();
+    const simulated = new Map();
+    function bondIssue(kind, ids) {
+      const oath = kind === "oath";
+      if (!oath && kind !== "marriage") return "알 수 없는 중개 종류입니다.";
+      if (ids.length !== (oath ? 3 : 2) || new Set(ids).size !== ids.length || ids.some(id => !units.has(id)))
+        return oath ? "의형제는 서로 다른 장수 3명을 선택하세요." : "결혼은 서로 다른 장수 2명을 선택하세요.";
+      const genders = new Set(ids.map(id => units.get(id).gender));
+      if (genders.size !== (oath ? 1 : 2)) return oath ? "의형제는 동성 3명끼리 맺습니다." : "결혼은 이성 2명이 대상입니다.";
+      for (const id of ids) {
+        if (oath && sworn.has(id)) return units.get(id).name + "에게 이미 의형제가 있습니다.";
+        if (!oath && married.has(id)) return units.get(id).name + "의 배우자는 " + units.get(married.get(id)).name + "입니다.";
+      }
+      for (const [i,a] of ids.entries()) for (const b of ids.slice(i+1)) {
+        const r = relation(a,b);
+        if (r.family || r.hate) return units.get(a).name + "·" + units.get(b).name + " 사이에 " +
+          (r.family || "혐오") + " 관계가 있습니다.";
+      }
+      return "";
+    }
+
+    function projectRelation(r, kind) {
+      return {...r, natural:true, buff:true, oath:kind === "oath" || r.oath,
+        spouse:kind === "marriage" || r.spouse, grade:kind === "oath" ? 3 : Math.max(1,r.grade)};
+    }
 
     function relation(a, b) {
       const key = a * 65536 + b;
@@ -94,7 +118,7 @@
         family = model.familyBetween(a, b);
       const recorded = model.relationBetween(a, b)?.gradeValue || 0;
       const kin = !!family && (family !== "같은 혈족" || recorded > 0);
-      const spouse = married.get(a) === b,
+      const spouse = married.get(a) === b && !simulated.has(k),
         oath = oathPairs.has(k);
       const natural = !hate && (ab || ba || kin || spouse || oath);
       const assist = !hate && units.get(b).traits.has("보좌");
@@ -118,8 +142,9 @@
         buff: natural || assist,
         grade: hate ? 0 : oath ? 3 : grade
       };
-      cache.set(key, r);
-      return r;
+      const result = simulated.has(k) ? projectRelation(r, simulated.get(k)) : r;
+      cache.set(key, result);
+      return result;
     }
 
     function profile(id, nearby) {
@@ -202,7 +227,21 @@
         exposed: rows.filter(r => r.exposed).map(r => r.id)
       };
     }
+    for (const {kind,ids} of decisions) {
+      const issue = bondIssue(kind,ids);
+      if (issue) throw new Error(issue);
+      if (kind === "oath") ids.forEach(id => sworn.add(id));
+      else {
+        married.set(ids[0],ids[1]);
+        married.set(ids[1],ids[0]);
+      }
+      for (const [i,a] of ids.entries()) for (const b of ids.slice(i+1)) simulated.set(pair(a,b),kind);
+      cache.clear();
+    }
+    function withBond(kind, ids) {
+      return api.createFieldModel(data, model, scene, [...decisions,{kind,ids:[...ids]}]);
+    }
     return { scene, initial, units, relation, profile, panel, evaluate, sumPanels, married, sworn, formations,
-      pair };
+      pair, bondIssue, projectRelation, withBond };
   };
 })();

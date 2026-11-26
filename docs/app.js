@@ -34,6 +34,8 @@
     fieldPlan: null,
     fieldEngine: null,
     fieldRecommendations: null,
+    bondHistory: [],
+    bondFocus: [],
     stale: false,
     previous: null,
     notices: [],
@@ -180,6 +182,8 @@
       state.fieldPlan = engine ? result : null;
       state.fieldEngine = engine;
       state.fieldRecommendations = null;
+      state.bondHistory = [];
+      state.bondFocus = [];
       if (engine) {
         state.plan = null;
         resetPanel();
@@ -413,11 +417,46 @@
     dex.showOfficer(id);
   }
 
+  function refreshBonds(focusTarget = "#mediationTitle") {
+    state.fieldRecommendations = SAN14.fieldMediation(state.fieldEngine,state.fieldPlan,state.bondFocus);
+    renderWorkspace(focusTarget);
+  }
+
+  function applyBonds(rows) {
+    if (!rows?.length || rows.some(row=>!row) || !state.fieldPlan || state.stale) return;
+    try {
+      let next = {engine:state.fieldEngine,plan:state.fieldPlan};
+      for (const row of rows) next = SAN14.previewFieldBond(next.engine,next.plan,row);
+      state.bondHistory.push({choices:rows.map(r=>({kind:r.kind,ids:[...r.ids]})),engine:state.fieldEngine,plan:state.fieldPlan,
+        focus:[...state.bondFocus]});
+      state.fieldEngine = next.engine;
+      state.fieldPlan = next.plan;
+      state.bondFocus = [];
+      refreshBonds();
+      feedback.announce("가정한 관계와 배치를 반영했습니다.");
+    } catch (error) {
+      feedback.announce(error.message);
+    }
+  }
+
   const publicActions = {
     "field-mediation": () => {
-      if (!state.fieldPlan || state.stale) return;
-      state.fieldRecommendations = SAN14.fieldMediation(state.fieldEngine,state.fieldPlan);
-      renderWorkspace();
+      if (state.fieldPlan && !state.stale) refreshBonds();
+    },
+    "field-bond-apply": value => {
+      const [key,index] = value.split("/");
+      applyBonds([state.fieldRecommendations?.[key]?.[Number(index)]]);
+    },
+    "field-bond-custom": () => applyBonds([{kind:state.bondFocus.length===3?"oath":"marriage",ids:state.bondFocus}]),
+    "field-bond-set": () => applyBonds(state.fieldRecommendations?.oathSet?.choices),
+    "field-bond-undo": () => {
+      if (state.stale || !state.bondHistory.length) return;
+      const last = state.bondHistory.pop();
+      state.fieldEngine = last.engine;
+      state.fieldPlan = last.plan;
+      state.bondFocus = last.focus;
+      refreshBonds();
+      feedback.announce("마지막 중개 가정을 취소했습니다.");
     },
     officer: (id) => dex.showOfficer(Number(id)),
     trait: (label) => dex.showTrait(label),
@@ -496,7 +535,11 @@
 
   document.addEventListener("change", (event) => {
     const input = event.target;
-    if (input.dataset.duplicateKey) {
+    if (input.dataset.bondFilter != null && !state.stale && state.fieldPlan) {
+      const controls = [...workspace.querySelectorAll("[data-bond-filter]")];
+      state.bondFocus = [...new Set(controls.filter(el=>el.value).map(el=>Number(el.value)))];
+      refreshBonds("#bondFilter"+Math.min(Number(input.dataset.bondFilter),state.bondFocus.length));
+    } else if (input.dataset.duplicateKey) {
       const key = input.dataset.duplicateKey;
       state.selectedNames.set(key, Number(input.value));
       reviewNames();

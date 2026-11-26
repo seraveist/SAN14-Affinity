@@ -47,11 +47,53 @@ function checkPlan(plan, engine, owned, count) {
       plan.groups.flatMap(g => g.ids).sort((a, b) => a - b));
   }
 }
+let mediationCases = 0;
+
+function checkMediation(engine, plan, ids) {
+  const saved = JSON.stringify(plan);
+  const alternatives = api.fieldMediation(engine,plan);
+  for (const key of Object.keys(api.fieldBondSections)) {
+    for (const row of alternatives[key]) {
+      const {engine: projected,plan: after} = api.previewFieldBond(engine,plan,row);
+      checkPlan(after,projected,ids,plan.groups.length);
+      const stat = k => after.groups.reduce((sum,g)=>sum+g[k],0);
+      for (const axis of ["attack","defense"]) {
+        assert.equal(stat(axis),row.local.after[axis]);
+        assert.equal(stat(axis)-row.start[axis],(row.rotation?.[axis] || 0)+row.local[axis]);
+      }
+      for (const axis of ["minAttack","minDefense","attackGap","defenseGap"])
+        assert.equal(after.metrics[axis],row.local.after[axis]);
+      assert.equal(after.groups.reduce((sum,g)=>sum+g.gradeSum,0)-
+        plan.groups.reduce((sum,g)=>sum+g.gradeSum,0),row.local.gradeGain+
+        (row.move ? after.groups.reduce((sum,g)=>sum+engine.evaluate(g.ids,g.support,g.forms).gradeSum,0)-
+        plan.groups.reduce((sum,g)=>sum+g.gradeSum,0) : 0));
+      assert.equal(row.local.rescued.length,row.local.independent.length+row.local.anchored.length);
+      assert.equal(row.potential.participants,row.ids.length);
+      assert.ok(projected.bondIssue(row.kind,row.ids));
+      if (row.kind==="marriage") assert.equal(projected.married.get(row.ids[0]),row.ids[1]);
+      for (const a of row.ids) for (const b of row.ids.filter(id=>id!==a)) {
+        const expected=engine.projectRelation(engine.relation(a,b),row.kind);
+        assert.deepEqual(projected.relation(a,b),expected);
+      }
+      mediationCases++;
+    }
+  }
+  const set = alternatives.oathSet;
+  let combined = {engine,plan};
+  const people = set.choices.flatMap(r=>r.ids);
+  assert.equal(people.length,new Set(people).size);
+  for (const r of set.choices) combined=api.previewFieldBond(combined.engine,combined.plan,r);
+  assert.equal(combined.plan.metrics.minAttack,set.after.minAttack);
+  assert.equal(combined.plan.metrics.minDefense,set.after.minDefense);
+  assert.equal(JSON.stringify(plan),saved);
+}
+
 for (const engine of [e, later])
   for (const [faction, ids] of Object.entries({ 유비: liu, 조조: cao, 손권: wu })) {
     for (let count = 1; count <= 4; count++) {
       const plan = api.planField(engine, { ids, groupCount: count });
       checkPlan(plan, engine, ids, count);
+      checkMediation(engine, plan, ids);
       assert.equal(plan.groups.flatMap(g => g.ids).length, 5 * count);
       assert.equal(plan.metrics.unsafe, 0);
       if (count === 4) {
@@ -139,3 +181,38 @@ assert.equal(api.preferFieldPlan([mock(100, 100), mock(140, 140)], baseline, ref
 assert.ok(api.preferFieldPlan([mock(110, 105), mock(151, 150)], baseline, ref));
 assert.ok(!api.preferFieldPlan([mock(90, 125), mock(170, 170)], baseline, ref));
 console.log("24개 분할 사례와 정원·재현성·공방·호위·범위 지원·시나리오·중개 회귀 검증 통과");
+
+const target = api.fieldMediation(e,liuFour,[147,792]);
+const distance = target.marriageBridge[0], transfer = target.marriageMove[0];
+assert.deepEqual([distance.local.attack,distance.local.defense,distance.potential.attack,distance.potential.defense],[0,0,76,76]);
+assert.deepEqual([transfer.rotation.attack,transfer.rotation.defense,transfer.local.attack,transfer.local.defense],[-66,-87,76,76]);
+assert.deepEqual([transfer.local.after.minAttack,transfer.local.after.minDefense],[4044,3299]);
+const marriagePreview=api.previewFieldBond(e,liuFour,transfer);
+const second=api.fieldMediation(marriagePreview.engine,marriagePreview.plan,[792]);
+assert.ok(Object.keys(api.fieldBondSections).filter(k=>k.startsWith("marriage")).every(k=>!second[k].length));
+assert.equal(e.married.has(792),false);
+assert.ok(later.bondIssue("marriage",[440,792]).includes("황월영"));
+assert.ok(e.bondIssue("oath",[442,344]));
+assert.ok(e.bondIssue("oath",[442,344,344]));
+assert.ok(e.bondIssue("marriage",[952,147]));
+assert.ok(e.bondIssue("oath",[521,518,442]).includes("혈족"));
+assert.ok(e.bondIssue("marriage",[3,769]));
+assert.equal(e.bondIssue("marriage",[147,792]),"");
+assert.equal(e.bondIssue("oath",[163,792,120]),"");
+const withMarriage=e.withBond("marriage",[147,792]);
+assert.equal(withMarriage.married.get(792),147);
+assert.ok(withMarriage.sworn.has(147));
+assert.throws(()=>withMarriage.withBond("marriage",[521,792]));
+const existing=e.withBond("marriage",[952,163]);
+assert.equal(existing.profile(952,[952,163]).friends,e.profile(952,[952,163]).friends);
+const preferred=api.fieldMediation(later,caoFour).local[0];
+assert.deepEqual(preferred.potential.independent,preferred.potential.rescued);
+assert.equal(preferred.potential.independent.length,3);
+const twoMains=e.evaluate([521,709],124,["어린",e.units.get(709).field[0]]);
+assert.equal(e.bondIssue("oath",[521,709,124]),"");
+assert.equal(api.fieldMediation(e,{groups:[{...twoMains,reserve:[]}],reference:{attack:1000,defense:1000}}).local.length,0);
+const aid=e.withBond("oath",[241,442,344]);
+assert.equal(aid.profile(442,[241,442]).friends,e.profile(442,[241,442]).friends);
+assert.equal(aid.profile(241,[241,442]).friends,e.profile(241,[241,442]).friends+1);
+assert.equal(aid.relation(442,344).grade,3);
+console.log("중개 미리보기와 적용 일치",mediationCases,"건 · 동시 의형제·중복 혼인·범위·응원 재배치 검증 통과");
