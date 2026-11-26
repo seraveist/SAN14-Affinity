@@ -249,3 +249,8 @@ a.skip-link:focus { transform: translateY(0); }
   .button, .member-row, .surface { border-color: ButtonText; }
   .main-nav button[aria-current], .group-switcher button[aria-pressed="true"] { outline: 2px solid Highlight; }
 }
+
+.field-group { padding: 1rem 1.25rem; margin: 1rem 0; }
+.field-group h2, .field-group h3 { margin-top: 0; }
+.field-group summary { cursor: pointer; }
+.field-group .text-button { padding-inline: 0; }

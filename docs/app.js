@@ -31,6 +31,9 @@
     activeIds: [],
     signature: "",
     plan: null,
+    fieldPlan: null,
+    fieldEngine: null,
+    fieldRecommendations: null,
     stale: false,
     previous: null,
     notices: [],
@@ -61,6 +64,7 @@
   function signature() {
     return JSON.stringify([
       roster.parseNames(nameInput.value), roster.parseNames(coreInput.value), countInput.value,
+      $("#engineVersion").value, $("#engineVersion").value === "field" ? $("#fieldScenario").value : null,
       [...state.selectedNames].sort(([left], [right]) => left.localeCompare(right)),
     ]);
   }
@@ -78,7 +82,7 @@
     const target = focus ?? activeWorkspaceTarget();
     const supports = workspace.querySelector("#deploymentSupport");
     if (state.panel === "deployment" && supports) state.deploymentSupportOpen = supports.open;
-    workspace.innerHTML = formationView(state);
+    workspace.innerHTML = state.fieldPlan ? SAN14.renderFieldPlan(state,model) : formationView(state);
     if (target) workspace.querySelector(target)?.focus({ preventScroll: !focus });
   }
 
@@ -122,7 +126,7 @@
 
   function invalidate() {
     const wasStale = state.stale;
-    state.stale = !!state.plan && state.signature !== signature();
+    state.stale = !!(state.plan || state.fieldPlan) && state.signature !== signature();
     if (state.stale && !wasStale) resetPanel();
     if (wasStale !== state.stale) renderWorkspace("");
   }
@@ -159,7 +163,11 @@
     renderNameReview();
     await new Promise((resolve) => setTimeout(resolve, 24));
     try {
-      const result = planner.planRoster(ids, resolved.options);
+      if (signature() !== inputSignature) return;
+      const engine = $("#engineVersion").value === "field" ? SAN14.createFieldModel(data,model,$("#fieldScenario").value) : null;
+      const result = engine ? SAN14.planField(engine,{ids,
+        fixedCoreIds:resolved.options.fixedCoreIds, groupCount:resolved.options.targetCount ?? "auto"}) :
+        planner.planRoster(ids, resolved.options);
       if (signature() !== inputSignature) return;
       state.activeIds = ids;
       state.signature = inputSignature;
@@ -169,7 +177,13 @@
       if (resolved.options.mode === "count" && result.groups.length !== resolved.options.targetCount) {
         state.notices.push("목표 " + resolved.options.targetCount + "집단 · 실제 " + result.groups.length + "집단이 만들어졌습니다.");
       }
-      installPlan(campaign.snapshot(result, resolved.options));
+      state.fieldPlan = engine ? result : null;
+      state.fieldEngine = engine;
+      state.fieldRecommendations = null;
+      if (engine) {
+        state.plan = null;
+        resetPanel();
+      } else installPlan(campaign.snapshot(result, resolved.options));
       setRosterEditor(false);
       renderWorkspace("#currentTitle");
       feedback.announce(ids.length + "명의 편성 초안을 만들었습니다.");
@@ -356,6 +370,11 @@
   });
   coreInput.addEventListener("input", invalidate);
   countInput.addEventListener("change", invalidate);
+  $("#fieldScenario").addEventListener("change", invalidate);
+  $("#engineVersion").addEventListener("change", () => {
+    $("#fieldScenario").hidden = $("#scenarioLabel").hidden = $("#engineVersion").value !== "field";
+    invalidate();
+  });
   $("#dexSearch").addEventListener("input", (event) => {
     if (event.isComposing) return;
     dex.searchChanged();
@@ -395,6 +414,11 @@
   }
 
   const publicActions = {
+    "field-mediation": () => {
+      if (!state.fieldPlan || state.stale) return;
+      state.fieldRecommendations = SAN14.fieldMediation(state.fieldEngine,state.fieldPlan);
+      renderWorkspace();
+    },
     officer: (id) => dex.showOfficer(Number(id)),
     trait: (label) => dex.showTrait(label),
     formation: (label) => dex.showFormation(label),

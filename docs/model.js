@@ -389,6 +389,7 @@
       isCommandCoreType,
       officerFormationNames,
       directRelations,
+      familyBetween,
       scenarioAffinityTargets,
       findPaths,
     });

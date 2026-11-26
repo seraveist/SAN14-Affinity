@@ -13,7 +13,7 @@
           ? theme : (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
       })();
     </script>
-    <link rel="stylesheet" href="./styles.css?v=3">
+    <link rel="stylesheet" href="./styles.css?v=4">
   </head>
   <body>
     <a class="skip-link" href="#content">본문으로 이동</a>
@@ -58,6 +58,10 @@
               <p id="rosterHint" class="help">쉼표, 공백 또는 줄바꿈으로 장수 이름을 구분합니다.</p>
             </div>
             <div class="settings">
+              <label for="engineVersion">편성 방식</label>
+              <select id="engineVersion"><option value="field">편성 알고리즘 v1.0</option><option value="legacy">기존 친애 편성</option></select>
+              <label id="scenarioLabel" for="fieldScenario">초기 관계 시나리오</label>
+              <select id="fieldScenario"><option value="01">황건의 난 (184년)</option><option value="06">한중쟁탈전 (217년)</option></select>
               <label for="groupCount">목표 집단 수</label>
               <select id="groupCount">
                 <option value="auto">자동분할</option>
@@ -134,7 +138,7 @@
     </footer>
 
     <script src="./data.js?v=4"></script>
-    <script src="./model.js?v=4"></script>
+    <script src="./model.js?v=5"></script>
     <script src="./roster.js?v=2"></script>
     <script src="./planner.js?v=4"></script>
     <script src="./recommendations.js?v=2"></script>
@@ -142,6 +146,10 @@
     <script src="./ui.js?v=4"></script>
     <script src="./formation-view.js?v=4"></script>
     <script src="./dex.js?v=4"></script>
-    <script src="./app.js?v=4"></script>
+    <script src="./field-model.js?v=1"></script>
+    <script src="./field-planner.js?v=1"></script>
+    <script src="./field-mediation.js?v=1"></script>
+    <script src="./field-view.js?v=1"></script>
+    <script src="./app.js?v=5"></script>
   </body>
 </html>
