@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import vm from "node:vm";
 import "./model.js";
 import "./roster.js";
 import "./field-model.js";
 import "./field-planner.js";
 import "./field-mediation.js";
+import "./field-comparison.js";
 
 const sandbox = { window: {} };
 vm.runInNewContext(await readFile(new URL("./data.js", import.meta.url), "utf8"), sandbox);
@@ -22,6 +24,13 @@ assert.deepEqual([liu.length, cao.length, wu.length], [25, 25, 32]);
 const e = api.createFieldModel(data, model, "01"),
   later = api.createFieldModel(data, model, "06");
 const cached = new Map();
+const frozenBaseline = JSON.parse(await readFile(new URL("./field-v1-baseline.json",import.meta.url),"utf8"));
+
+function layoutDigest(plan) {
+  const groups = plan.groups.map(g => [g.core, g.ids, g.forms, g.support, g.reserve, g.attack, g.defense, g.isolated, g.gradeSum]);
+  return createHash("sha256").update(JSON.stringify([groups,plan.unassigned])).digest("hex");
+}
+
 
 function checkPlan(plan, engine, owned, count) {
   assert.equal(plan.version, "1.0");
@@ -93,6 +102,9 @@ for (const engine of [e, later])
     for (let count = 1; count <= 4; count++) {
       const plan = api.planField(engine, { ids, groupCount: count });
       checkPlan(plan, engine, ids, count);
+      assert.equal(plan.version, frozenBaseline.version);
+      assert.equal(layoutDigest(plan), frozenBaseline.layouts[engine.scene+"/"+faction][count-1],
+        engine.scene+" "+faction+" "+count+"집단 기준 편성");
       checkMediation(engine, plan, ids);
       assert.equal(plan.groups.flatMap(g => g.ids).length, 5 * count);
       assert.equal(plan.metrics.unsafe, 0);
@@ -216,3 +228,34 @@ assert.equal(aid.profile(442,[241,442]).friends,e.profile(442,[241,442]).friends
 assert.equal(aid.profile(241,[241,442]).friends,e.profile(241,[241,442]).friends+1);
 assert.equal(aid.relation(442,344).grade,3);
 console.log("중개 미리보기와 적용 일치",mediationCases,"건 · 동시 의형제·중복 혼인·범위·응원 재배치 검증 통과");
+
+for (const engine of [e, later]) {
+  for (const [faction, ids] of Object.entries({유비:liu,조조:cao,손권:wu})) {
+    const current = cached.get(faction+engine.scene);
+    const rows = [...api.compareFieldCounts(engine,current)];
+    assert.deepEqual(rows.map(r=>r.count),[1,2,3,4]);
+    assert.equal(rows[3].plan,current);
+    for (const {count,plan} of rows) {
+      assert.equal(layoutDigest(plan),frozenBaseline.layouts[engine.scene+"/"+faction][count-1]);
+      if (plan.affinityAlternative) checkPlan(plan.affinityAlternative,engine,ids,count);
+    }
+  }
+}
+const pinnedCounts = [...api.compareFieldCounts(e,fixed)];
+assert.ok(pinnedCounts.slice(0,2).every(row=>!row.plan && row.reason.includes("고정 코어")));
+assert.deepEqual(pinnedCounts[3].plan.groups.slice(0,3).map(g=>g.core),[952,147,656]);
+assert.deepEqual(pinnedCounts[3].plan.fixedCoreIds,[952,147,656]);
+const smallCounts = [...api.compareFieldCounts(e,single)];
+assert.ok(smallCounts.slice(1).every(row=>!row.plan && row.reason.includes("보유 장수")));
+const fiveCores = api.planField(e,{ids:liu,groupCount:5,fixedCoreIds:[952,147,656,596,440]});
+const extended = [...api.compareFieldCounts(e,fiveCores)];
+assert.deepEqual(extended.filter(r=>r.plan).map(r=>r.count),[5,6,7,8]);
+const rebalanced = [...api.compareFieldCounts(marriagePreview.engine,marriagePreview.plan)];
+assert.strictEqual(rebalanced[3].plan,marriagePreview.plan);
+assert.deepEqual(rebalanced[1].plan,api.planField(marriagePreview.engine,{ids:liu,groupCount:2}));
+assert.equal(marriagePreview.engine.married.get(792),147);
+assert.throws(()=>[...api.compareFieldCounts(later,liuFour)]);
+const text = api.fieldPlanText(marriagePreview.plan,model.displayName,[{kind:"marriage",ids:[147,792]}]);
+for (const phrase of ["v1.0","황건의 난","4집단","4044 / 3299","지원 · 미씨","결혼 가정 · 관우 · 미씨","미편성"]) assert.ok(text.includes(phrase),phrase);
+assert.equal(api.fieldAlgorithmVersion,frozenBaseline.version);
+console.log("기준 커밋 24개 편성 일치 · 집단 수 비교, 고정 코어, 친애 대안 및 중개 후 재분할 검증 통과");

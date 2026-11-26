@@ -1,6 +1,47 @@
 (() => {
   "use strict";
   const api = globalThis.SAN14;
+  function layoutMembers(plan, name) {
+    const n = value => value.toLocaleString("ko-KR");
+    const {escape} = api.ui;
+    const members = plan.groups.map((g,i)=>'<li><strong>'+(i+1)+'집단</strong> · '+
+        (g.rows.map(r=>name(r.id)+' ('+escape(r.form)+')').join(' · ') || '주력 없음')+
+        '<br>지원 '+(g.support==null?'없음':name(g.support))+' / 예비 '+(g.reserve.map(name).join(' · ') || '없음')+
+        ' / 공군 '+n(g.attack)+' · 방어 '+n(g.defense)+'</li>').join("");
+    return '<ul>'+members+'</ul><p>미편성 · '+(plan.unassigned.map(name).join(' · ') || '없음')+'</p>';
+  }
+
+  function countComparison(state, model) {
+    const {button, escape} = api.ui;
+    const comparison = state.fieldCountComparison;
+    if (!comparison || state.stale) return "";
+    const heading = '<h3 tabindex="-1" id="fieldComparisonTitle">집단 수별 편성 비교</h3>';
+    const close = button("비교 닫기", "field-compare-close");
+    if (comparison.loading) return '<section class="surface field-group">'+heading+
+      '<p role="status">같은 명단과 관계로 집단 수별 편성을 계산하고 있습니다.</p>'+close+'</section>';
+    const n = value => value.toLocaleString("ko-KR");
+    const rows = comparison.rows.map(({count, plan, reason}) => {
+      if (!plan) return '<tr><th scope="row">'+count+'집단</th><td colspan="5">'+escape(reason)+' · 구성 불가</td></tr>';
+      const m = plan.metrics;
+      const primary = plan.groups.reduce((sum,g)=>sum+g.ids.length,0);
+      const support = plan.groups.filter(g=>g.support!=null).length;
+      return '<tr><th scope="row">'+count+'집단'+(plan===state.fieldPlan?' (현재)':'')+'</th>'+
+        '<td>'+primary+' + '+support+'</td><td>'+plan.unassigned.length+'</td>'+
+        '<td>'+n(m.minAttack)+' / '+n(m.minDefense)+'</td><td>'+n(m.attackGap)+' / '+n(m.defenseGap)+'</td>'+
+        '<td>'+m.isolated+'</td></tr>';
+    }).join("");
+    const name = id => escape(model.displayName(id));
+    const proposals = comparison.rows.filter(row=>row.plan && row.plan!==state.fieldPlan).map(({count,plan})=>{
+      return '<details class="details"><summary>'+count+'집단 명단과 적용</summary>'+layoutMembers(plan,name)+
+        button(count+"집단 편성 적용","field-count-apply",count)+'</details>';
+    }).join("");
+    return '<section class="field-group surface">'+heading+'<p class="help">집단 수가 달라지면 동시에 출진하는 인원도 달라집니다. 현재 행은 적용한 배치와 중개 가정을 포함합니다.</p>'+
+      '<div class="field-count-scroll" tabindex="0" role="region" aria-label="집단 수별 지표"><table class="compare-table">'+
+      '<thead><tr><th>집단 수</th><th>주력 + 지원</th><th>미편성</th><th>최저 공군 / 방어</th>'+
+      '<th>공군 / 방어 격차</th><th>고립 주력</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+      proposals+close+'</section>';
+  }
+
   api.renderFieldPlan = function(state, model) {
     const { fieldPlan: plan, fieldEngine: engine } = state;
     const { escape, button } = api.ui;
@@ -47,8 +88,7 @@
       ' → ' + n(alt.metrics.minDefense) +
       ' · 공군 격차 ' + n(m.attackGap) + ' → ' + n(alt.metrics.attackGap) + ' · 방어 격차 ' + n(m.defenseGap) + ' → ' +
       n(alt.metrics.defenseGap) + '</p>' +
-      alt.groups.map((g, i) => '<p>' + (i + 1) + '집단 · ' + g.rows.map(r => name(r.id) + ' (' + escape(r.form) +
-        ')').join(' · ') + ' · ' + n(g.attack) + ' / ' + n(g.defense) + '</p>').join('') + '</details>' : '';
+      layoutMembers(alt,name) + (state.stale ? '' : button("친애 보완 편성 적용","field-affinity-apply")) + '</details>' : '';
     function mediationView() {
       const rows = state.fieldRecommendations;
       if (!rows) return button("의형제·결혼 후보 계산","field-mediation");
@@ -115,8 +155,10 @@
             ' / 새 관계망을 구성 · '+list(rescue.independent)+'</p>':'')+
           button(move?"이 배치와 중개를 가정":"이 관계를 가정","field-bond-apply",key+"/"+i)+'</li>';
       }
-      const history = state.bondHistory.length ? '<p>적용한 가정 · '+state.bondHistory.flatMap(step=>step.choices).map(b=>
-        (b.kind==="oath"?"의형제 ":"결혼 ")+list(b.ids)).join(" / ")+'</p>'+button("마지막 가정 취소","field-bond-undo") : '';
+      const appliedBonds = state.fieldHistory.flatMap(step=>step.choices);
+      const lastIsBond = state.fieldHistory.at(-1)?.choices.length;
+      const history = appliedBonds.length ? '<p>적용한 가정 · '+appliedBonds.map(b=>
+        (b.kind==="oath"?"의형제 ":"결혼 ")+list(b.ids)).join(" / ")+'</p>'+(lastIsBond?button("마지막 가정 취소","field-bond-undo"):'') : '';
       const choices = Object.entries(api.fieldBondSections).filter(([key])=>rows[key].length).map(([key,label])=>
         '<details'+(focus.length || key==="local" || key==="marriage" ? ' open':'')+'><summary>'+label+' ('+rows[key].length+')</summary><ol>'+rows[key].map((r,i)=>renderRow(r,key,i)).join("")+'</ol></details>').join("");
       const set=rows.oathSet;
@@ -129,14 +171,18 @@
     }
     return (state.stale ? '<p class="notice">입력이 변경되었습니다. 초안을 다시 만들면 새 조건을 반영합니다.</p>' : '') +
       state.notices.map(t => '<p class="notice">' + escape(t) + '</p>').join("") +
-      '<section class="surface field-group"><h2 id="currentTitle" tabindex="-1">편성 알고리즘 v1.0 · ' + api
+      '<section class="surface field-group"><h2 id="currentTitle" tabindex="-1">편성 알고리즘 v' + escape(plan.version) + ' · ' + api
       .fieldScenarios[plan.scene].name + '</h2>' +
       '<p>최저 공군 <strong>' + n(m.minAttack) + '</strong> · 최저 방어 <strong>' + n(m.minDefense) +
       '</strong> · 집단 간 격차 공군 ' + n(m.attackGap) + ' / 방어 ' + n(m.defenseGap) + '</p>' +
       '<table class="compare-table"><thead><tr><th>집단</th><th>공군</th><th>방어</th><th>주력 관계</th></tr></thead><tbody>' +
       plan.groups.map((g, i) => '<tr><th>' + (i + 1) + '</th><td>' + n(g.attack) + '</td><td>' + n(g.defense) +
         '</td><td>' + g.links.length + '쌍</td></tr>').join("") +
-      '</tbody></table><p class="help">장수당 5,000명·사기 100의 육상 야전 추정치입니다. 주력과 지원이 효과 범위에 있고 다른 집단은 독립적으로 출진한다고 가정합니다.</p></section>' +
+      '</tbody></table><p class="help">장수당 5,000명·사기 100의 육상 야전 추정치입니다. 주력과 지원이 효과 범위에 있고 다른 집단은 독립적으로 출진한다고 가정합니다.</p><div class="form-actions">' +
+      (state.stale || state.fieldCountComparison ? '' : button("집단 수 비교","field-compare-counts")) +
+      button("편성표 복사","copy-field-plan") +
+      (!state.stale && state.fieldHistory.length ? button("직전 변경 취소","field-layout-undo") : '') +
+      '</div></section>' + countComparison(state,model) +
       groups.join("") + affinity + '<p><strong>미편성</strong> ' + list(plan.unassigned) +
       '</p><section class="surface field-group"><h3 id="mediationTitle" tabindex="-1">중개 추천</h3>' +
       '<p class="help">평시는 각 집단의 독립 출진, 합류는 대상끼리 같은 군단·정상 상태로 서로 범위에 들어온 경우입니다. 등급 합은 양방향 순서 지표입니다. 중개 자격은 충족으로 가정하며 초기 혼인·결의 기록은 일부만 확인됐습니다. 선택한 가정은 현재 초안에 적용됩니다.</p>' +

@@ -1,6 +1,8 @@
 (() => {
   "use strict";
   const api = globalThis.SAN14;
+  const version = "1.0";
+  api.fieldAlgorithmVersion = version;
   const sum = values => values.reduce((a, b) => a + b, 0);
   const cmp = (a, b) => { for (let i = 0; i < a.length; i++)
       if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
@@ -279,31 +281,41 @@
       if (best === connected) break;
       connected = best;
     }
-    let affinityAlternative = null;
+    let alternativeLayout = null;
     if (connected !== groups) {
       if (better(connected, groups, reference)) groups = connected;
-      else affinityAlternative = { groups: connected, metrics: summary(connected, reference) };
+      else alternativeLayout = connected;
     }
-    groups = groups.map((g, i) => ({ ...g, core: fixed[i] ?? [...g.ids].sort(byPower)[0] ?? null,
-    reserve: [] }));
-    const deployed = new Set(groups.flatMap(g => [...g.ids, g.support]));
-    const remaining = ids.filter(i => !deployed.has(i)).sort(byPower);
-    const unassigned = [];
-    for (const id of remaining) {
-      let best = null,
-        score = -Infinity;
-      for (const g of groups) {
-        if (g.reserve.length >= 5 || g.ids.length + Number(g.support != null) + g.reserve.length >= 10)
-          continue;
-        const active = g.support == null ? g.ids : [...g.ids, g.support];
-        const tie = fit(id, active) + .15 * fit(id, g.reserve) - 2 * g.reserve.length;
-        if (tie > score) { best = g;
-          score = tie; }
+    function completeLayout(layout) {
+      const groups = layout.map((group, i) => ({
+        ...group,
+        core: fixed[i] ?? [...group.ids].sort(byPower)[0] ?? null,
+        reserve: [],
+      }));
+      const deployed = new Set(groups.flatMap(g => [...g.ids, g.support]));
+      const remaining = ids.filter(i => !deployed.has(i)).sort(byPower);
+      const unassigned = [];
+      for (const id of remaining) {
+        let best = null,
+          score = -Infinity;
+        for (const g of groups) {
+          if (g.reserve.length >= 5 || g.ids.length + Number(g.support != null) + g.reserve.length >= 10)
+            continue;
+          const active = g.support == null ? g.ids : [...g.ids, g.support];
+          const tie = fit(id, active) + .15 * fit(id, g.reserve) - 2 * g.reserve.length;
+          if (tie > score) {
+            best = g;
+            score = tie;
+          }
+        }
+        if (best) best.reserve.push(id);
+        else unassigned.push(id);
       }
-      if (best) best.reserve.push(id);
-      else unassigned.push(id);
+      return { version, scene: engine.scene, fixedCoreIds: [...fixed], groups, reference,
+        metrics: summary(groups, reference), unassigned, affinityAlternative: null };
     }
-    return { version: "1.0", scene: engine.scene, groups, reference, metrics: summary(groups, reference),
-      affinityAlternative, unassigned };
+    const plan = completeLayout(groups);
+    if (alternativeLayout) plan.affinityAlternative = completeLayout(alternativeLayout);
+    return plan;
   };
 })();

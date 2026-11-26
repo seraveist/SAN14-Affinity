@@ -34,7 +34,8 @@
     fieldPlan: null,
     fieldEngine: null,
     fieldRecommendations: null,
-    bondHistory: [],
+    fieldCountComparison: null,
+    fieldHistory: [],
     bondFocus: [],
     stale: false,
     previous: null,
@@ -129,7 +130,10 @@
   function invalidate() {
     const wasStale = state.stale;
     state.stale = !!(state.plan || state.fieldPlan) && state.signature !== signature();
-    if (state.stale && !wasStale) resetPanel();
+    if (state.stale && !wasStale) {
+      state.fieldCountComparison = null;
+      resetPanel();
+    }
     if (wasStale !== state.stale) renderWorkspace("");
   }
 
@@ -182,7 +186,8 @@
       state.fieldPlan = engine ? result : null;
       state.fieldEngine = engine;
       state.fieldRecommendations = null;
-      state.bondHistory = [];
+      state.fieldHistory = [];
+      state.fieldCountComparison = null;
       state.bondFocus = [];
       if (engine) {
         state.plan = null;
@@ -319,7 +324,7 @@
     ];
     feedback.openDialog("데이터 근거", `
       <div class="chips">${badge(model.officers.size + "명")}${badge(source?.label ?? "CE 친애 자료 미확인")}${badge("CE 개성 대조 · " + data.ceTraits.metadata.checkedOn)}</div>
-      <p class="subhead">개인 친애 방향과 혈연은 CE 시나리오 장수 ID로 확인했습니다. ☆·◎·○는 기존 편성 자료의 연계 등급입니다.</p>
+      <p class="subhead">개인 친애 방향과 혈연은 CE 시나리오 장수 ID로 확인했습니다. 편성 알고리즘 v${escape(SAN14.fieldAlgorithmVersion)}은 시나리오 관계와 개성으로 연계 등급을 추정합니다. 기존 친애 편성은 기존 자료의 ☆·◎·○를 사용합니다.</p>
       ${source ? `<p class="help">기준 파일 ${escape(source.source)} · 일부 시나리오에서는 장료·악진·이전과 감녕·능통 사이의 관계가 달라집니다.</p>` : ""}
       ${groups.map(([title, rows, format]) => `<details class="details"><summary>${title} ${rows.length}건</summary>${list(rows, format)}</details>`).join("")}
       <p class="help">동명이인이나 상충으로 확인이 필요한 등급은 계산에서 제외합니다. CE 개인 친애나 가까운 혈연이 확인된 쌍은 직접 연결에 포함합니다.</p>
@@ -422,13 +427,80 @@
     renderWorkspace(focusTarget);
   }
 
+  function saveFieldStep(choices = []) {
+    state.fieldHistory.push({
+      choices, engine: state.fieldEngine, plan: state.fieldPlan, focus: [...state.bondFocus],
+      count: countInput.value, notices: state.notices, reviewedBonds: !!state.fieldRecommendations,
+    });
+    state.fieldCountComparison = null;
+  }
+
+  function restoreFieldStep() {
+    if (!state.fieldPlan || state.stale || !state.fieldHistory.length) return;
+    const last = state.fieldHistory.pop();
+    state.fieldCountComparison = null;
+    state.fieldEngine = last.engine;
+    state.fieldPlan = last.plan;
+    state.bondFocus = last.focus;
+    state.notices = last.notices;
+    countInput.value = last.count;
+    state.signature = signature();
+    state.fieldRecommendations = null;
+    if (last.reviewedBonds) refreshBonds(last.choices.length ? "#mediationTitle" : "#currentTitle");
+    else renderWorkspace("#currentTitle");
+    feedback.announce("직전 편성을 복원했습니다.");
+  }
+
+  async function openFieldCounts() {
+    if (state.stale || !state.fieldPlan || state.fieldCountComparison) return;
+    const request = {rows: [], loading: true};
+    const base = state.fieldPlan;
+    const valid = () => state.fieldCountComparison === request && state.fieldPlan === base && !state.stale;
+    state.fieldCountComparison = request;
+    renderWorkspace("#fieldComparisonTitle");
+    try {
+      const results = SAN14.compareFieldCounts(state.fieldEngine, base);
+      while (valid()) {
+        await new Promise(resolve => setTimeout(resolve, 16));
+        if (!valid()) return;
+        const entry = results.next();
+        if (entry.done) break;
+        request.rows.push(entry.value);
+      }
+      if (!valid()) return;
+      request.loading = false;
+      renderWorkspace();
+      feedback.announce("집단 수별 비교를 완료했습니다.");
+    } catch (error) {
+      if (!valid()) return;
+      state.fieldCountComparison = null;
+      renderWorkspace('[data-action="field-compare-counts"]');
+      feedback.announce("집단 수 비교를 완료하지 못했습니다. 다시 시도하세요.");
+      console.error(error);
+    }
+  }
+
+  function adoptFieldLayout(plan) {
+    if (state.stale || !plan || plan === state.fieldPlan) return;
+    const changeCount = plan.groups.length !== state.fieldPlan.groups.length;
+    saveFieldStep();
+    if (changeCount) {
+      countInput.value = String(plan.groups.length);
+      state.signature = signature();
+      state.notices = state.notices.filter(message => !message.startsWith("목표 "));
+    }
+    state.fieldPlan = plan;
+    if (state.fieldRecommendations) refreshBonds("#currentTitle");
+    else renderWorkspace("#currentTitle");
+    feedback.announce("선택한 편성을 적용했습니다.");
+  }
+
   function applyBonds(rows) {
     if (!rows?.length || rows.some(row=>!row) || !state.fieldPlan || state.stale) return;
     try {
       let next = {engine:state.fieldEngine,plan:state.fieldPlan};
       for (const row of rows) next = SAN14.previewFieldBond(next.engine,next.plan,row);
-      state.bondHistory.push({choices:rows.map(r=>({kind:r.kind,ids:[...r.ids]})),engine:state.fieldEngine,plan:state.fieldPlan,
-        focus:[...state.bondFocus]});
+      saveFieldStep(rows.map(r => ({kind: r.kind, ids: [...r.ids]})));
       state.fieldEngine = next.engine;
       state.fieldPlan = next.plan;
       state.bondFocus = [];
@@ -449,14 +521,22 @@
     },
     "field-bond-custom": () => applyBonds([{kind:state.bondFocus.length===3?"oath":"marriage",ids:state.bondFocus}]),
     "field-bond-set": () => applyBonds(state.fieldRecommendations?.oathSet?.choices),
-    "field-bond-undo": () => {
-      if (state.stale || !state.bondHistory.length) return;
-      const last = state.bondHistory.pop();
-      state.fieldEngine = last.engine;
-      state.fieldPlan = last.plan;
-      state.bondFocus = last.focus;
-      refreshBonds();
-      feedback.announce("마지막 중개 가정을 취소했습니다.");
+    "field-bond-undo": restoreFieldStep,
+    "field-layout-undo": restoreFieldStep,
+    "field-compare-counts": openFieldCounts,
+    "field-compare-close": () => {
+      state.fieldCountComparison = null;
+      renderWorkspace('[data-action="field-compare-counts"]');
+    },
+    "field-count-apply": value => {
+      const comparison = state.fieldCountComparison;
+      if (comparison && !comparison.loading) adoptFieldLayout(comparison.rows.find(row=>row.count===Number(value))?.plan);
+    },
+    "field-affinity-apply": () => adoptFieldLayout(state.fieldPlan?.affinityAlternative),
+    "copy-field-plan": () => {
+      if (!state.fieldPlan) return;
+      const bonds = state.fieldHistory.flatMap(step => step.choices);
+      feedback.copy(SAN14.fieldPlanText(state.fieldPlan,model.displayName,bonds), state.stale ? "이전 편성표" : "편성표");
     },
     officer: (id) => dex.showOfficer(Number(id)),
     trait: (label) => dex.showTrait(label),

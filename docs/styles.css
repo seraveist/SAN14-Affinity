@@ -254,3 +254,6 @@ a.skip-link:focus { transform: translateY(0); }
 .field-group h2, .field-group h3 { margin-top: 0; }
 .field-group summary { cursor: pointer; }
 .field-group .text-button { padding-inline: 0; }
+
+.field-count-scroll { overflow-x: auto; }
+.field-count-scroll th, .field-count-scroll td { white-space: nowrap; }
